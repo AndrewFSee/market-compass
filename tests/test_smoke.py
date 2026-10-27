@@ -100,7 +100,9 @@ def _fake_credit(tmp_path, monkeypatch):
     walk = 300 + np.cumsum(np.random.default_rng(1).normal(0, 3, len(idx)))
     store.save_frame("credit", "spreads_bps", pd.DataFrame({"hy_spread": walk, "baa_spread": walk / 2}, index=idx))
     store.save_frame("credit", "spreads", pd.DataFrame({"hy_oas": walk / 100, "ig_oas": walk / 300}, index=idx))
-    store.save_frame("credit", "stress", pd.DataFrame({"stress_prob": np.linspace(0, 1, len(idx))}, index=idx))
+    p_stress = np.linspace(0, 1, len(idx))
+    store.save_frame("credit", "stress", pd.DataFrame({"regime_prob_0": (1 - p_stress) / 2, "regime_prob_1": (1 - p_stress) / 2,
+                                                       "regime_prob_2": p_stress, "stress_prob": p_stress}, index=idx))
     store.save_frame("credit", "tiers", pd.DataFrame({"B": walk, "CCC": walk * 3}, index=idx))
     store.save_frame("credit", "forecast", pd.DataFrame({"forecast_bps": np.linspace(-2, 2, 60)}, index=idx[-60:]))
     card = {"bps": 300.0, "change_20d": 5.0, "percentile": 0.4, "since": "2023-01-02", "as_of": "2026-01-01"}

@@ -68,7 +68,9 @@ Publishers are thin: they call the project's own validated functions, never re-i
   exposure, tiers, forecast, summary.json. Runs before "market". That project stores spreads
   in **bps**; `spreads` is converted to % points for `CREDIT_OVERRIDE` (on). HY is spliced to
   1996 from a licensed file. Its fetcher writes a new ~1.7 MB `data/market_data_*.parquet`
-  cache per day (not pruned).
+  cache per day (not pruned). Its stress HMM (3 states on Baa levels, refitted each January)
+  is near-binary and its regime flips cluster on refit days (6 of 35 year starts vs 0.5% of
+  other days, with the spread unchanged): a property of that model, shown as-is on the page.
 - **macro** (macro-regime-nowcaster) -> `data/macro/`: walk_forward (copied from its
   `data/features.csv`), summary.json (live nowcast, config from `config/settings.yaml` as in
   `run_nowcast.py`). Only the walk-forward panel is used as history: a single

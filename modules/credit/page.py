@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from plotly.subplots import make_subplots
 
 from core import store, ui
 from modules.credit import config as cfg
@@ -116,12 +117,35 @@ with left, st.container(border=True):
                    "except high yield, which the credit project splices back to 1996 from a licensed file.")
 
 with right, st.container(border=True):
-    st.markdown("**Real-time P(credit-stress regime)**")
-    if stress_hist is not None and "stress_prob" in stress_hist:
-        ui.chart(_line(_span(stress_hist["stress_prob"].dropna(), span), ".0%", y_range=[0, 1], fill=True),
-                 key="cr_stress_chart")
-        st.caption("What the model showed at each date. It switched on in Aug 1998, early 2000 and Dec 2007, "
-                   "but only on 23 Mar 2020 for COVID: sudden shocks are left to the volatility part of the overlay.")
+    st.markdown("**Real-time credit regime**")
+    state_cols = [c for c in cfg.REGIME_STATES if stress_hist is not None and c in stress_hist]
+    if state_cols:
+        probs = stress_hist[state_cols].dropna(how="all")
+        probs = probs[probs.index >= probs.index.max() - pd.DateOffset(years=cfg.HISTORY_SPANS[span])] \
+            if cfg.HISTORY_SPANS[span] else probs
+        baa = spreads[cfg.REGIME_SPREAD].reindex(probs.index) if spreads is not None and cfg.REGIME_SPREAD in spreads \
+            else None
+        fig = make_subplots(rows=2 if baa is not None else 1, cols=1, shared_xaxes=True, vertical_spacing=0.06,
+                            row_heights=[0.62, 0.38] if baa is not None else [1.0])
+        for col in state_cols:  # stacked, calm at the bottom
+            label, color = cfg.REGIME_STATES[col]
+            fig.add_trace(go.Scatter(x=probs.index, y=probs[col], name=label, mode="lines", stackgroup="p",
+                                     line={"width": 0.5, "color": ui.PALETTE[color]},
+                                     hovertemplate="%{y:.0%}<extra>" + label + "</extra>"), row=1, col=1)
+        if baa is not None:
+            fig.add_trace(go.Scatter(x=baa.index, y=baa.values, name=cfg.SPREAD_LABELS[cfg.REGIME_SPREAD],
+                                     mode="lines", line={"width": 2, "color": ui.PALETTE["grey"]}, showlegend=False,
+                                     hovertemplate="%{y:.0f} bp<extra>Baa spread</extra>"), row=2, col=1)
+            fig.update_yaxes(title={"text": "Baa, bp", "font": {"size": 11}}, row=2, col=1)
+        fig.update_yaxes(range=[0, 1], tickformat=".0%", row=1, col=1)
+        fig.update_layout(height=330, margin={"l": 0, "r": 0, "t": 24, "b": 0}, hovermode="x unified",
+                          legend={"orientation": "h", "y": 1.08, "x": 0})
+        ui.chart(fig, key="cr_stress_chart")
+        st.caption("What the model showed at each date: a 3-state HMM on the Baa spread, refitted every January "
+                   "on past data only. Its probabilities are nearly all-or-nothing, and a January refit can switch "
+                   "the regime with the spread unchanged (e.g. Jan 2011 and Jan 2012), because each refit redraws "
+                   "where 'stressed' begins. Stress switched on in Aug 1998, early 2000 and Dec 2007, but only on "
+                   "23 Mar 2020 for COVID: sudden shocks are left to the volatility part of the overlay.")
 
 # ================================================================= tiers
 st.subheader("Rating tiers")

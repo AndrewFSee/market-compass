@@ -15,6 +15,15 @@ SPREAD_LABELS = {
     "aaa_spread": "Moody's Aaa − 10Y",
 }
 
+# The HMM's states, calmest first (publish_to_hub.py writes regime_prob_0..2), and the
+# spread it is fitted on, drawn under the regime chart.
+REGIME_STATES = {
+    "regime_prob_0": ("Calm", "teal"),
+    "regime_prob_1": ("Elevated", "amber"),
+    "regime_prob_2": ("Stressed", "red"),
+}
+REGIME_SPREAD = "baa_spread"
+
 # P(stress regime) bands for the badge: calm / elevated / stressed
 STRESS_CUTS = [0.2, 0.5]
 STRESS_LABELS = ["CALM", "ELEVATED", "STRESSED"]
