@@ -104,6 +104,16 @@ Publishers are thin: they call the project's own validated functions, never re-i
   this from the numbers; keep it that way if features change.
 - The economic gauge is deliberately not a feature (revised data, full-sample weights).
 
+## Analyst (modules/analyst)
+- Claude (`config.MODEL`, claude-opus-5-5) via the SDK tool runner with read-only tools in
+  `tools.py` (plain functions over the hub store; `agent.py` wraps them with `@beta_tool`).
+  Server-side refusal fallback is on (`fallbacks="default"` + `config.FALLBACK_BETA`).
+- Job "analyst" runs last and writes `analyst/brief.json` + `brief_history.json` (one per
+  day, `BRIEFS_KEPT`). Without credentials it logs a skip, it doesn't fail the run.
+- The page's chat is the one deliberate exception to "pages never call the network".
+- Needs `ANTHROPIC_API_KEY` in `.env` (app.py and run_jobs.py load it). Tests never call
+  the API: they fake the client / `agent.ask`.
+
 ## Data quirks
 - Yahoo can serve today's row half-filled after the close (e.g. VIX but not SPY);
   `job.last_complete_session` cuts all market prices to the last complete session.

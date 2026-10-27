@@ -36,7 +36,10 @@ def forget_changed_modules(prefixes=("core", "modules", "registry")) -> list[str
 
 
 forget_changed_modules()
+from core import env  # noqa: E402
 from registry import LINKS, PAGES  # noqa: E402
+
+env.load()  # .env secrets (FRED_API_KEY, ANTHROPIC_API_KEY) for pages that need them
 
 st.set_page_config(page_title="Dashboard Hub", page_icon=":material/dashboard:", layout="wide")
 

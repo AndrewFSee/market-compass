@@ -346,3 +346,99 @@ def test_analogs_page_without_data(tmp_path, monkeypatch):
     page = AppTest.from_file(str(ROOT / "modules" / "analogs" / "page.py"), default_timeout=60).run()
     assert not page.exception
     assert page.info
+
+
+def test_analyst_tools_on_demo(demo_data):
+    import json
+    from modules.analogs import job as analogs_job
+    from modules.analyst import agent, tools
+    analogs_job.run(demo=True, log=lambda *a: None)
+    assert "error" not in tools.market_overview() and "error" not in tools.lookalikes()
+    assert tools.gauge_detail("liquidity")["components"]
+    assert "available" in tools.series_history("nope")
+    assert tools.series_history("spy", 1)["points"]
+    assert "error" in tools.credit_overview()          # not published in demo: a message, not a crash
+    for t in agent.TOOLS:                              # every tool result is valid JSON
+        args = {"gauge": "technical"} if t.name == "gauge_detail" else {"name": "vix"} if t.name == "series_history" else {}
+        json.loads(t.call(args) if hasattr(t, "call") and t.name else t(**args))
+
+
+class _Msg:
+    def __init__(self, content, stop, usage=(100, 20)):
+        from types import SimpleNamespace as NS
+        self.content = content
+        self.stop_reason = stop
+        self.model = "claude-opus-5-5"
+        self.usage = NS(input_tokens=usage[0], output_tokens=usage[1], cache_read_input_tokens=50,
+                        cache_creation_input_tokens=0)
+
+
+def _fake_client(messages):
+    from types import SimpleNamespace as NS
+    seen = {}
+
+    def tool_runner(**kw):
+        seen.update(kw)
+        return iter(messages)
+    return NS(beta=NS(messages=NS(tool_runner=tool_runner))), seen
+
+
+def test_analyst_agent_loop_with_fake_client():
+    from types import SimpleNamespace as NS
+    from modules.analyst import agent, config as acfg
+    msgs = [_Msg([NS(type="tool_use", name="market_overview", input={})], "tool_use"),
+            _Msg([NS(type="thinking"), NS(type="text", text="All calm.")], "end_turn")]
+    client, seen = _fake_client(msgs)
+    res = agent.ask([{"role": "user", "content": "hi"}], effort="medium", client=client)
+    assert res["text"] == "All calm." and res["tool_calls"] == [{"name": "market_overview", "input": {}}]
+    assert res["usage"]["input_tokens"] == 200 and res["usage"]["cache_read_input_tokens"] == 100
+    assert seen["model"] == acfg.MODEL and seen["output_config"] == {"effort": "medium"}
+    assert seen["fallbacks"] == "default" and acfg.FALLBACK_BETA in seen["betas"]
+    client, _ = _fake_client([_Msg([NS(type="text", text="partial")], "max_tokens")])
+    assert "output limit" in agent.ask([], "low", client=client)["text"]
+
+    def no_auth(**kw):
+        raise TypeError("Could not resolve authentication method. Expected one of api_key, ...")
+    with pytest.raises(agent.NoCredentials):
+        agent.ask([], "low", client=NS(beta=NS(messages=NS(tool_runner=no_auth))))
+
+
+def test_analyst_job_skips_without_credentials(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from modules.analyst import agent, job
+
+    def no_creds(*a, **k):
+        raise agent.NoCredentials("none")
+    monkeypatch.setattr(agent, "ask", no_creds)
+    lines = []
+    assert job.run(log=lines.append) is None and any("ANTHROPIC_API_KEY" in line for line in lines)
+    assert job.run(demo=True, log=lines.append) is None
+
+
+def test_analyst_page_brief_and_chat(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from core import store
+    from streamlit.testing.v1 import AppTest
+    page_path = str(ROOT / "modules" / "analyst" / "page.py")
+    empty = AppTest.from_file(page_path, default_timeout=60).run()
+    assert not empty.exception and empty.info
+
+    brief = {"generated": "2026-10-27T18:20:00", "data_as_of": "Oct 27, 2026", "model": "claude-opus-5-5",
+             "text": "## What changed\nLiquidity tightened.", "stop_reason": "end_turn",
+             "tool_calls": [{"name": "market_overview", "input": {}}], "usage": {"input_tokens": 10, "output_tokens": 5}}
+    store.save_json("analyst", "brief", brief)
+    store.save_json("analyst", "brief_history", [brief])
+    from modules.analyst import agent
+    asked = {}
+
+    def fake_ask(messages, effort, client=None):
+        asked["messages"] = messages
+        return {"text": "Because spreads widened.", "stop_reason": "end_turn", "usage": {},
+                "tool_calls": [{"name": "credit_overview", "input": {}}], "model": "claude-opus-5-5"}
+    monkeypatch.setattr(agent, "ask", fake_ask)
+    at = AppTest.from_file(page_path, default_timeout=60).run()
+    assert not at.exception and any("Liquidity tightened" in m.value for m in at.markdown)
+    at.chat_input[0].set_value("Why is liquidity tight?").run()
+    assert not at.exception
+    assert "Liquidity tightened" in asked["messages"][0]["content"]       # brief passed as context
+    assert any(m.value == "Because spreads widened." for m in at.markdown)

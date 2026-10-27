@@ -46,6 +46,7 @@ PAGES = {
     ],
     "Research": [
         {"path": "modules/analogs/page.py", "title": "Look-alikes", "icon": ":material/history:"},
+        {"path": "modules/analyst/page.py", "title": "Analyst", "icon": ":material/psychology:"},
     ],
     "Portfolio": [
         {"path": "modules/tailrisk/page.py", "title": "Tail Risk", "icon": ":material/warning:"},
@@ -78,4 +79,5 @@ JOBS = {
     "vol": {"cmd": [venv_python(VOL), "scripts/publish_to_hub.py"], "cwd": str(VOL)},
     "tailrisk": {"cmd": [venv_python(TAILRISK), "scripts/publish_to_hub.py"],
                  "cwd": str(TAILRISK)},
+    "analyst": "modules.analyst.job:run",  # last: reads everything the others published
 }
