@@ -102,10 +102,28 @@ def _summary(key: str, comp: ind.Composite, at=None, weights: dict | None = None
             "date": date.strftime("%Y-%m-%d"), "components": components}
 
 
+def last_complete_session(etf: pd.DataFrame, stocks: pd.DataFrame, min_coverage: float = 0.9) -> pd.Timestamp:
+    """Latest date with a benchmark close and prices for most stocks.
+
+    Yahoo sometimes serves today's row half-filled (e.g. VIX but not SPY, or only some
+    stocks); computing on it would mix sessions in breadth and returns."""
+    last = etf[cfg.BENCHMARK].dropna().index[-1]
+    if not stocks.empty:
+        counts = stocks.notna().sum(axis=1)
+        full = counts[counts >= min_coverage * counts.tail(20).max()]
+        if len(full):
+            last = min(last, full.index[-1])
+    return last
+
+
 def build(inputs: dict, log=print) -> dict:
     fred, etf, stocks, cons = inputs["fred"], inputs["etf"], inputs["stocks"], inputs["constituents"]
     if cfg.BENCHMARK not in etf:
         raise RuntimeError(f"No prices for {cfg.BENCHMARK}; cannot build the market page")
+    session = last_complete_session(etf, stocks)
+    if etf.index[-1] > session or (not stocks.empty and stocks.index[-1] > session):
+        log(f"  dropping incomplete price rows after {session:%Y-%m-%d}")
+    etf, stocks = etf.loc[:session], stocks.loc[:session]
     spy = etf[cfg.BENCHMARK].dropna()
 
     log("Computing breadth...")

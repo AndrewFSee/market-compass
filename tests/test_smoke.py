@@ -89,3 +89,167 @@ def test_external_job_publishes(tmp_path, monkeypatch):
     bad.write_text("raise SystemExit(3)\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="code 3"):
         run_jobs.run_job({"cmd": [sys.executable, str(bad)]}, demo=False, log=lines.append)
+
+
+def _fake_credit(tmp_path, monkeypatch):
+    """Minimal tables in the schema credit-spread-analyzer's publish_to_hub.py writes."""
+    import numpy as np
+    from core import store
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    idx = pd.bdate_range("2023-01-02", periods=800)
+    walk = 300 + np.cumsum(np.random.default_rng(1).normal(0, 3, len(idx)))
+    store.save_frame("credit", "spreads_bps", pd.DataFrame({"hy_spread": walk, "baa_spread": walk / 2}, index=idx))
+    store.save_frame("credit", "spreads", pd.DataFrame({"hy_oas": walk / 100, "ig_oas": walk / 300}, index=idx))
+    store.save_frame("credit", "stress", pd.DataFrame({"stress_prob": np.linspace(0, 1, len(idx))}, index=idx))
+    store.save_frame("credit", "tiers", pd.DataFrame({"B": walk, "CCC": walk * 3}, index=idx))
+    store.save_frame("credit", "forecast", pd.DataFrame({"forecast_bps": np.linspace(-2, 2, 60)}, index=idx[-60:]))
+    card = {"bps": 300.0, "change_20d": 5.0, "percentile": 0.4, "since": "2023-01-02", "as_of": "2026-01-01"}
+    tier = {"tier": "B", "spread": 300.0, "change": 12.0, "average": 290.0, "low": 250.0, "high": 400.0,
+            "percentile": 0.6, "history_start": "2023-01-02"}
+    store.save_json("credit", "summary", {
+        "as_of": "2026-01-01", "demo": True, "spread_col": "baa_spread",
+        "spreads": {"hy_spread": card, "baa_spread": card},
+        "stress": {"prob": 0.6, "date": "2026-01-01", "n_states": 3},
+        "exposure": {"weight": 0.4, "date": "2026-01-01", "target_vol": 0.15},
+        "forecast": {"bps": 1.5, "date": "2026-01-01", "horizon": 5, "model": "ensemble", "holdout_start": "2019-01-01"},
+        "tiers": [tier], "widening": {"widening": 1, "total": 1, "threshold_bp": 10.0},
+        "decompression": {"value": 600.0, "change_20d": 20.0, "percentile": 0.9},
+        "liquidity": {"as_of": "2026-01-01", "net": 5800.0, "net_change": -50.0, "net_change_pct": -0.9,
+                      "assets": 6700.0, "assets_change": 10.0, "tga": 900.0, "tga_change": 60.0,
+                      "rrp": 1.0, "rrp_change": 0.0}})
+
+
+def test_credit_page_renders(tmp_path, monkeypatch):
+    _fake_credit(tmp_path, monkeypatch)
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "credit" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    assert any(m.value == "60%" for m in page.metric)  # P(stress)
+
+
+def test_credit_page_without_data(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "credit" / "page.py"), default_timeout=60).run()
+    assert not page.exception
+    assert page.info
+
+
+def test_credit_override_feeds_market(tmp_path, monkeypatch):
+    _fake_credit(tmp_path, monkeypatch)
+    from modules.market import config as cfg, job
+    fred = {}
+    job._apply_credit_override(fred, log=lambda *a: None)
+    assert fred[cfg.HY_OAS].iloc[0] == pytest.approx(fred[cfg.IG_OAS].iloc[0] * 3)
+
+
+def test_macro_page_renders(tmp_path, monkeypatch):
+    import numpy as np
+    from core import store
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    idx = pd.date_range("1990-01-31", periods=400, freq="ME")
+    store.save_frame("macro", "walk_forward", pd.DataFrame(
+        {"p_recession": np.linspace(0, 1, 400), "factor_real_activity": np.sin(np.arange(400) / 9)}, index=idx))
+    store.save_json("macro", "summary", {
+        "run_at": "2026-01-02T18:00:00", "demo": False,
+        "nowcast": {"recession_probability": 0.2, "gdp_nowcast": 2.0, "gdp_ci_lower": -1.0, "gdp_ci_upper": 5.0,
+                    "current_regime": "expansion", "factor_values": {"real_activity": 0.3, "long_rates": -1.0},
+                    "ensemble_detail": {"cfnai": 0.1, "probit": 0.3, "rsm": 0.5, "ensemble": 0.2},
+                    "weights": {"cfnai": 0.5, "probit": 0.5, "rsm": 0.0}, "signal_as_of": {"ensemble": "2025-12-31"}},
+        "panel": {"rows": 400, "start": "1990-01-31", "through": str(idx[-1].date()), "built": "2020-01-01T00:00:00"}})
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "macro" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    assert any(m.value == "20.0%" for m in page.metric)
+    assert page.warning  # panel built long ago -> staleness warning
+
+
+def test_macro_page_without_data(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "macro" / "page.py"), default_timeout=60).run()
+    assert not page.exception
+    assert page.info
+
+
+def test_vol_page_renders(tmp_path, monkeypatch):
+    import numpy as np
+    from core import store
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    days = pd.bdate_range("2026-01-02", periods=60)
+    ov = pd.DataFrame({"ticker": ["SPY", "NVDA"], "date": days[-1], "spot": [700.0, 180.0],
+                       "atm_7d": [0.14, 0.4], "atm_30d": [0.15, 0.42], "atm_91d": [0.16, 0.41], "atm_365d": [0.18, 0.4],
+                       "atm_30d_d5": [0.01, -0.02], "atm_30d_pct252": [0.6, np.nan], "rr25_30d": [-0.05, -0.04],
+                       "ts_30_91": [0.01, -0.01], "vrp_30d": [0.03, 0.1], "earn_days_to": [np.nan, 12.0],
+                       "fc21_vol": [0.16, 0.43], "fc21_lo80": [0.1, 0.3], "fc21_hi80": [0.22, 0.55]})
+    store.save_frame("vol", "overview", ov)
+    store.save_frame("vol", "history", pd.DataFrame({"date": list(days) * 2, "ticker": ["SPY"] * 60 + ["NVDA"] * 60,
+                                                     "atm_30d": 0.15, "rv_cc_21d": 0.12}))
+    store.save_frame("vol", "market", pd.DataFrame({"mkt_vix": np.linspace(15, 20, 60),
+                                                    "mkt_vix3m": np.linspace(17, 21, 60)}, index=days))
+    store.save_json("vol", "summary", {"as_of": "2026-03-26", "tickers": 2, "history_start": "2026-01-02",
+                                       "stale_tickers": [], "model": "HAR", "last_health": {"ok": True},
+                                       "track_record_21d": {"SPY": {"n": 10, "rmse_forecast": 5.0, "rmse_implied": 6.0,
+                                                                    "bias_forecast": 1.0, "coverage80": 0.8}}})
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "vol" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    assert page.warning  # surfaces months old -> scraper warning
+
+
+def test_vol_page_without_data(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "vol" / "page.py"), default_timeout=60).run()
+    assert not page.exception
+    assert page.info
+
+
+def test_tailrisk_page_renders(tmp_path, monkeypatch):
+    import numpy as np
+    from core import store
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    store.save_frame("tailrisk", "fan", pd.DataFrame({f"p{p}": np.linspace(0, p / 1000, 21) for p in (5, 25, 50, 75, 95)},
+                                                      index=pd.RangeIndex(1, 22, name="day")))
+    store.save_frame("tailrisk", "pnl_hist", pd.DataFrame({"bin_mid": np.linspace(-0.2, 0.2, 80),
+                                                           "unhedged": np.full(80, 1 / 80)}))
+    m = {"var": 0.05, "cvar": 0.09, "mean": 0.008, "std": 0.04, "excess_kurtosis": 10.0}
+    store.save_json("tailrisk", "summary", {
+        "run_at": "2026-01-02T18:00:00", "demo": False, "data_through": "2026-01-02", "data_start": "2007-01-04",
+        "portfolio": {"SPY": 0.6, "TLT": 0.4},
+        "model": {"n_paths": 1000, "horizon_days": 21, "marginal": "student_t", "volatility": "garch",
+                  "regime": "markov_2state", "dependence": "student_t_copula"},
+        "simulated": {"95%": m, "99%": m}, "historical": {"95%": m, "99%": m},
+        "hedges": [{"name": "unhedged", "expected_return": 0.008, "var_95": 0.05, "cvar_95": 0.09, "cvar_99": 0.15},
+                   {"name": "put_0.95m", "expected_return": 0.0, "var_95": 0.055, "cvar_95": 0.07, "cvar_99": 0.1}],
+        "optimal": {"alpha": 0.95, "weights": {"SPY": 0.5, "TLT": 0.5}, "cvar": 0.06, "var": 0.04,
+                    "expected_return": 0.006},
+        "crisis_regime": {"prob": 0.7, "long_run_share": 0.2, "vol_ratio": 2.5}})
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "tailrisk" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    assert any(m.value == "5.0%" for m in page.metric)
+
+
+def test_tailrisk_page_without_data(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "tailrisk" / "page.py"), default_timeout=60).run()
+    assert not page.exception
+    assert page.info
+
+
+def test_incomplete_last_session_is_dropped(tmp_path, monkeypatch):
+    """Yahoo can serve today's row half-filled; every output must stop at the last full session."""
+    import numpy as np
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from modules.market import config as cfg, demo, job
+    inputs = demo.generate()
+    last, prev = inputs["etf"].index[-1], inputs["etf"].index[-2]
+    inputs["etf"].loc[last, cfg.BENCHMARK] = np.nan          # no SPY close today
+    stocks = inputs["stocks"]
+    stocks.loc[last, stocks.columns[: len(stocks.columns) // 2]] = np.nan  # half the stocks missing
+    out = job.build(inputs, log=lambda *a: None)
+    assert out["breadth"].index[-1] == prev
+    assert (out["etf_returns"]["date"] == prev).all()
+    assert out["meta"]["as_of"] == prev.strftime("%b %d, %Y")

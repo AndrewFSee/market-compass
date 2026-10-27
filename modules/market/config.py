@@ -81,7 +81,9 @@ IG_OAS = "BAMLC0A0CM"
 # into the hub data folder and point this at it, e.g.
 #   CREDIT_OVERRIDE = {"module": "credit", "name": "spreads", "hy": "hy_oas", "ig": "ig_oas"}
 # The table needs a date index and the two columns named here (in % points).
-CREDIT_OVERRIDE: dict | None = None
+# credit-spread-analyzer publishes this with HY spliced back to 1996 (FRED alone: ~3 years).
+# If the table is missing, the job falls back to FRED.
+CREDIT_OVERRIDE: dict | None = {"module": "credit", "name": "spreads", "hy": "hy_oas", "ig": "ig_oas"}
 
 # Liquidity Regime: 8 macro liquidity factors.
 #   transform: level | diff63 (change over ~3 months) | pct63 (% change over ~3 months)

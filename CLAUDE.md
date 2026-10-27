@@ -50,16 +50,38 @@ scores.
 - Quick: add the project's script to `PAGES` with an absolute path and remove its
   `st.set_page_config` call (the hub sets it once).
 - Preferred: split it into a job that publishes into the hub data folder plus a page that
-  only reads. My credit-spread project should publish `data/credit/spreads.parquet`
-  (date index, `hy_oas`, `ig_oas` in % points) and then `CREDIT_OVERRIDE` in
-  `modules/market/config.py` points the gauges at it.
+  only reads (see the status below for the four already done this way).
 
-## Integration status (2026-10-26)
-- Planned, in order: credit-spread-analyzer, macro-regime-nowcaster, stochastic-vol-surface,
-  tail-risk-scenario-engine. Each gets a publish script (external job) + a light hub page,
-  with the full app kept as a `LINKS` entry.
-- credit-spread-analyzer stores spreads in **bps**; `CREDIT_OVERRIDE` expects % points.
-- tail-risk-scenario-engine's `.venv` points at a missing `C:\Python313` and must be rebuilt.
+## Integrated projects (2026-10-26)
+Each has `scripts/publish_to_hub.py` in its own repo, run by `run_jobs.py` with that project's
+venv (see `JOBS` in `registry.py`), a read-only page `modules/<name>/page.py`, and its full app
+as a `LINKS` entry (ports 8502-8505, started by hand; the command is in each module's config).
+Publishers are thin: they call the project's own validated functions, never re-implement them.
+- **credit** (credit-spread-analyzer) -> `data/credit/`: spreads, spreads_bps, stress,
+  exposure, tiers, forecast, summary.json. Runs before "market". That project stores spreads
+  in **bps**; `spreads` is converted to % points for `CREDIT_OVERRIDE` (on). HY is spliced to
+  1996 from a licensed file. Its fetcher writes a new ~1.7 MB `data/market_data_*.parquet`
+  cache per day (not pruned).
+- **macro** (macro-regime-nowcaster) -> `data/macro/`: walk_forward (copied from its
+  `data/features.csv`), summary.json (live nowcast, config from `config/settings.yaml` as in
+  `run_nowcast.py`). Only the walk-forward panel is used as history: a single
+  `Nowcaster.run()` history is in-sample. The panel is not rebuilt by the job
+  (`scripts/build_features.py`, slow); the page warns when it is >45 days old.
+- **vol** (stochastic-vol-surface) -> `data/vol/`: overview, history, market, forecasts,
+  summary.json. No network: reads what the project's own scheduled scrapers wrote, so the
+  page flags missed sessions (the scrapers are the Task Scheduler jobs DailyScraper /
+  PrecloseScraper).
+- **tailrisk** (tail-risk-scenario-engine) -> `data/tailrisk/`: fan, pnl_hist, summary.json.
+  One simulation feeds metrics, hedges and the CVaR optimiser. Venv rebuilt 2026-10-26
+  (old one pointed at a deleted C:\Python313). Fixed there: GARCH-t `mu` was used as drift
+  (~2.5x the mean); single-asset copula crash. Results move ~0.2 pts run to run because
+  Yahoo's adjusted prices differ slightly per download.
+- Tests here use synthetic data in each publisher's schema; if a publisher's output changes,
+  update the matching fake in `tests/test_smoke.py`.
+
+## Data quirks
+- Yahoo can serve today's row half-filled after the close (e.g. VIX but not SPY);
+  `job.last_complete_session` cuts all market prices to the last complete session.
 
 ## Open items / ideas
 - Liquidity gauge never reached its LOOSE band (>35) in 5 years of real history (max ~34):
