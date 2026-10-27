@@ -93,6 +93,17 @@ Publishers are thin: they call the project's own validated functions, never re-i
   S4U), after the vol scrapers (`\StochasticVolSurface\DailyScraper` 4:30 PM). The user runs
   it; registering persistent tasks needs their approval.
 
+## Look-alikes (modules/analogs)
+- Job "analogs" runs after "market" (reads `market/long_history` and `credit/spreads`, no
+  network). `engine.py` is pure: `build_state` (features in `config.FEATURES`, each shifted by
+  its publication lag), `find_analogs` (z-scores on data up to the test date, weighted RMS
+  distance, distinct episodes >= `SEPARATION_DAYS` apart, candidates end `PATH_DAYS` before
+  the date so outcomes are known), `evaluate` (walk-forward, non-overlapping months).
+- Measured 2026-10-27: no skill on direction (rank corr -0.03, 297 months); next-month vol
+  0.48 vs 0.58 for "last month's vol continues", adding 0.21 beyond it. The page states
+  this from the numbers; keep it that way if features change.
+- The economic gauge is deliberately not a feature (revised data, full-sample weights).
+
 ## Data quirks
 - Yahoo can serve today's row half-filled after the close (e.g. VIX but not SPY);
   `job.last_complete_session` cuts all market prices to the last complete session.

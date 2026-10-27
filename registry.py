@@ -44,6 +44,9 @@ PAGES = {
         {"path": "modules/macro/page.py", "title": "Macro Regime", "icon": ":material/public:"},
         {"path": "modules/vol/page.py", "title": "Volatility", "icon": ":material/ssid_chart:"},
     ],
+    "Research": [
+        {"path": "modules/analogs/page.py", "title": "Look-alikes", "icon": ":material/history:"},
+    ],
     "Portfolio": [
         {"path": "modules/tailrisk/page.py", "title": "Tail Risk", "icon": ":material/warning:"},
     ],
@@ -70,6 +73,7 @@ JOBS = {
     # credit runs first so the market gauges pick up its spliced HY spread history
     "credit": {"cmd": [venv_python(CREDIT), "scripts/publish_to_hub.py"], "cwd": str(CREDIT)},
     "market": "modules.market.job:run",
+    "analogs": "modules.analogs.job:run",  # reads market + credit output, so after both
     "macro": {"cmd": [venv_python(MACRO), "scripts/publish_to_hub.py"], "cwd": str(MACRO), "timeout": 1800},
     "vol": {"cmd": [venv_python(VOL), "scripts/publish_to_hub.py"], "cwd": str(VOL)},
     "tailrisk": {"cmd": [venv_python(TAILRISK), "scripts/publish_to_hub.py"],

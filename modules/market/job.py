@@ -62,15 +62,16 @@ def fetch_inputs(log=print) -> dict:
     _apply_credit_override(fred, log)
     log("Fetching ETF prices...")
     etf = sources.download_closes(cfg.all_etf_tickers(), cfg.PRICE_PERIOD, log=log)
-    long = sources.download_closes([cfg.BENCHMARK], cfg.BENCHMARK_LONG_PERIOD, log=log)
+    long = sources.download_closes([cfg.BENCHMARK, cfg.VIX], cfg.BENCHMARK_LONG_PERIOD, log=log)
     spy_long = long[cfg.BENCHMARK] if cfg.BENCHMARK in long else None
+    vix_long = long[cfg.VIX] if cfg.VIX in long else None
     log("Fetching index members...")
     cons = sources.fetch_constituents(log)
     log("Fetching stock prices (this takes a minute or two)...")
     stocks = sources.download_closes(cons["yf_symbol"].tolist(), cfg.PRICE_PERIOD, log=log)
     caps = _market_caps(cons["yf_symbol"].tolist(), log)
     missing += [t for t in cfg.all_etf_tickers() if t not in etf.columns]
-    return {"fred": fred, "etf": etf, "spy_long": spy_long, "constituents": cons, "stocks": stocks,
+    return {"fred": fred, "etf": etf, "spy_long": spy_long, "vix_long": vix_long, "constituents": cons, "stocks": stocks,
             "caps": caps, "missing": missing, "demo": False}
 
 
@@ -138,6 +139,10 @@ def build(inputs: dict, log=print) -> dict:
     spy_long = inputs.get("spy_long")
     spy_long = spy if spy_long is None or spy_long.dropna().empty else spy_long.dropna().loc[:session]
     spy_monthly = spy_long.resample("MS").last()  # month-start label, month-end close (econ calendar)
+    vix_long = inputs.get("vix_long")
+    if vix_long is None or vix_long.dropna().empty:
+        vix_long = etf.get(cfg.VIX, pd.Series(dtype=float))
+    vix_long = vix_long.dropna().loc[:session]
 
     log("Computing breadth...")
     sp_cols = [c for c in cons.loc[cons["sp500"], "yf_symbol"] if c in stocks.columns]
@@ -176,6 +181,15 @@ def build(inputs: dict, log=print) -> dict:
     econ_history = pd.DataFrame({"economic": econ.value, "coverage": econ.extra.get("coverage")})
     econ_history["spy"] = spy_monthly.reindex(econ_history.index)
 
+    # long daily series for other modules (e.g. the look-alike engine); as-dated, no lags applied
+    long_history = pd.DataFrame({
+        "spy": spy_long,
+        "vix": ind.align(vix_long, spy_long.index, limit=5),
+        "technical": tech.value.reindex(spy_long.index),
+        "liquidity": ind.align(liq.value, spy_long.index, limit=10),
+        "t10y3m": ind.align(fred.get("T10Y3M"), spy_long.index, limit=10),
+    }, index=spy_long.index).astype(float)  # a missing input comes back as None -> NaN column
+
     log("Computing returns...")
     etf_returns = ind.period_returns(etf.drop(columns=[cfg.VIX], errors="ignore"), cfg.TIMEFRAMES)
     stock_returns = ind.period_returns(stocks, cfg.TIMEFRAMES)
@@ -194,7 +208,7 @@ def build(inputs: dict, log=print) -> dict:
         "missing": sorted(set(inputs.get("missing", []))),
         "counts": {"etfs": int(etf.shape[1]), "stocks": int(stocks.shape[1]), "fred": len(fred)},
     }
-    return {"gauges": gauges, "gauge_history": history, "econ_history": econ_history,
+    return {"gauges": gauges, "gauge_history": history, "econ_history": econ_history, "long_history": long_history,
             "breadth": breadth, "etf_returns": etf_returns, "constituents_perf": cons_perf, "meta": meta}
 
 

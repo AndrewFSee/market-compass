@@ -312,3 +312,37 @@ def test_hub_forgets_modules_edited_while_running(tmp_path, monkeypatch):
         import modules.credit.config  # noqa: F401  re-imported fresh
     finally:
         os.utime(path, (old, old))
+
+
+def test_analog_engine_finds_planted_lookalike():
+    import numpy as np
+    from modules.analogs.engine import find_analogs
+    idx = pd.bdate_range("2000-01-03", periods=2000)
+    rng = np.random.default_rng(1)
+    state = pd.DataFrame(rng.normal(size=(len(idx), 4)), index=idx, columns=list("abcd"))
+    state.iloc[500] = state.iloc[-1] + 0.01          # a near-copy of today, far in the past
+    state.iloc[-30] = state.iloc[-1]                  # an exact copy too recent to have known outcomes
+    w = dict.fromkeys("abcd", 1.0)
+    an, used = find_analogs(state, idx[-1], w, k=10, separation=63, min_gap=63, min_features=4)
+    assert an.index[0] == idx[500] and used == list("abcd")
+    assert idx[-30] not in an.index                    # outcomes unknown -> not a candidate
+    pos = sorted(state.index.get_indexer(an.index))
+    assert all(b - a > 63 for a, b in zip(pos, pos[1:]))  # distinct episodes
+    assert an.index.max() <= idx[-64]
+
+
+def test_analogs_job_and_page_on_demo(demo_data):
+    from modules.analogs import job
+    s = job.run(demo=True, log=lambda *a: None)       # demo has no credit spreads: runs without HY features
+    assert s["analogs"] and not any(f["key"].startswith("hy") for f in s["features"])
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "analogs" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+
+
+def test_analogs_page_without_data(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "analogs" / "page.py"), default_timeout=60).run()
+    assert not page.exception
+    assert page.info
