@@ -228,6 +228,73 @@ def economic(fred: dict, specs: list[dict], gdp_id="GDPC1", lead=6, z_window=240
     return Composite(comp, T, S, extra)
 
 
+# ----------------------------------------------------------------- trend & market link
+def changes(value: pd.Series, at, lags: dict[str, int]) -> dict:
+    """The reading `n` observations before `at` and the change since, for each label -> n."""
+    s = _clean_series(value)
+    if s is None:
+        return {}
+    s = s.loc[:at]
+    out = {}
+    for label, n in lags.items():
+        if len(s) > n:
+            prior = float(s.iloc[-1 - n])
+            out[label] = {"prior": prior, "change": float(s.iloc[-1]) - prior,
+                          "date": s.index[-1 - n].strftime("%Y-%m-%d")}
+    return out
+
+
+def market_link(gauge: pd.Series, price: pd.Series, horizon: int, cuts: list[float], lag: int = 0,
+                min_obs: int = 24) -> dict:
+    """How a gauge relates to the market, on the gauge's own calendar.
+
+    * coincident: correlation of the gauge's change over `horizon` periods with the
+      market's return over the same periods - does it move with the market?
+    * predictive: rank correlation of the gauge's level with the market's return over
+      the *next* `horizon` periods - does it say anything about what comes next?
+      The reading is used `lag` periods after its date, when its inputs had actually
+      been published; otherwise a gauge built on lagged data (FRED weekly/monthly
+      series) gets credit for information nobody had yet.
+
+    Both use non-overlapping periods (every `horizon`-th observation, anchored at the
+    latest), so `n` counts independent periods and the significance check is honest:
+    |rho| * sqrt(n - 1) > 1.96. `bands` gives the next-period return by gauge band,
+    using every observation (overlapping, so `periods` = days / horizon is the
+    effective sample size)."""
+    g = _clean_series(gauge)
+    p = _clean_series(price)
+    if g is None or p is None:
+        return {}
+    df = pd.DataFrame({"g": g, "p": align(p, g.index)}).dropna()
+    if len(df) <= 2 * horizon:
+        return {}
+    df["fwd"] = (df["p"].shift(-horizon) / df["p"] - 1) * 100
+    df["past"] = (df["p"] / df["p"].shift(horizon) - 1) * 100
+    df["dg"] = df["g"] - df["g"].shift(horizon)
+    df["known"] = df["g"].shift(lag)  # the reading as of each date, given publication delays
+    sample = df.iloc[::-1].iloc[::horizon].iloc[::-1]
+    co = sample[["dg", "past"]].dropna()
+    pr = sample[["known", "fwd"]].dropna()
+    out = {"horizon": horizon, "lag": lag, "start": df.index[0].strftime("%Y-%m-%d"),
+           "coincident": None, "n_coincident": len(co), "predictive": None, "n_predictive": len(pr),
+           "significant": False}
+    if len(co) >= min_obs:
+        out["coincident"] = float(co["dg"].corr(co["past"]))
+    if len(pr) >= min_obs:
+        rho = float(pr["known"].rank().corr(pr["fwd"].rank()))  # Spearman, without needing scipy
+        out["predictive"] = rho
+        out["significant"] = bool(abs(rho) * np.sqrt(len(pr) - 1) > 1.96)
+    have = df.dropna(subset=["fwd", "known"])
+    band = sum((have["known"] > c).astype(int) for c in cuts)
+    out["overall"] = {"mean": float(have["fwd"].mean()), "hit": float((have["fwd"] > 0).mean()),
+                      "periods": len(have) / horizon}
+    out["bands"] = [{"band": k, "mean": float(sub["fwd"].mean()) if len(sub) else None,
+                     "hit": float((sub["fwd"] > 0).mean()) if len(sub) else None,
+                     "periods": len(sub) / horizon}
+                    for k, sub in ((k, have[band == k]) for k in range(len(cuts) + 1))]
+    return out
+
+
 # ----------------------------------------------------------------- breadth
 def breadth(closes: pd.DataFrame) -> pd.DataFrame:
     """Daily breadth stats across a set of stocks (columns = tickers)."""

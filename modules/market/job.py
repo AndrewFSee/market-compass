@@ -62,13 +62,15 @@ def fetch_inputs(log=print) -> dict:
     _apply_credit_override(fred, log)
     log("Fetching ETF prices...")
     etf = sources.download_closes(cfg.all_etf_tickers(), cfg.PRICE_PERIOD, log=log)
+    long = sources.download_closes([cfg.BENCHMARK], cfg.BENCHMARK_LONG_PERIOD, log=log)
+    spy_long = long[cfg.BENCHMARK] if cfg.BENCHMARK in long else None
     log("Fetching index members...")
     cons = sources.fetch_constituents(log)
     log("Fetching stock prices (this takes a minute or two)...")
     stocks = sources.download_closes(cons["yf_symbol"].tolist(), cfg.PRICE_PERIOD, log=log)
     caps = _market_caps(cons["yf_symbol"].tolist(), log)
     missing += [t for t in cfg.all_etf_tickers() if t not in etf.columns]
-    return {"fred": fred, "etf": etf, "constituents": cons, "stocks": stocks,
+    return {"fred": fred, "etf": etf, "spy_long": spy_long, "constituents": cons, "stocks": stocks,
             "caps": caps, "missing": missing, "demo": False}
 
 
@@ -77,7 +79,9 @@ def _f(x):
     return None if x is None or (isinstance(x, float) and not np.isfinite(x)) or pd.isna(x) else float(x)
 
 
-def _summary(key: str, comp: ind.Composite, at=None, weights: dict | None = None) -> dict:
+def _summary(key: str, comp: ind.Composite, at=None, weights: dict | None = None,
+             market: pd.Series | None = None) -> dict:
+    """Latest reading, components, trend vs earlier readings and the link to `market`."""
     spec = cfg.GAUGES[key]
     s = comp.value.dropna()
     base = {"title": spec["title"], "lo": spec["lo"], "hi": spec["hi"], "cuts": spec["cuts"],
@@ -98,8 +102,13 @@ def _summary(key: str, comp: ind.Composite, at=None, weights: dict | None = None
             total = sum(weights.values()) or 1
             row["weight"] = weights.get(c, 0) / total
         components.append(row)
+    horizon, horizon_label = cfg.GAUGE_HORIZON[key]
+    link = (ind.market_link(s.loc[:date], market, horizon, spec["cuts"], lag=cfg.GAUGE_PUBLICATION_LAG[key])
+            if market is not None else {})
     return {**base, "value": value, "label": cfg.gauge_label(key, value),
-            "date": date.strftime("%Y-%m-%d"), "components": components}
+            "date": date.strftime("%Y-%m-%d"), "components": components,
+            "trend": ind.changes(s, date, cfg.GAUGE_TREND[key]),
+            "vs_spy": {**link, "horizon_label": horizon_label} if link else None}
 
 
 def last_complete_session(etf: pd.DataFrame, stocks: pd.DataFrame, min_coverage: float = 0.9) -> pd.Timestamp:
@@ -125,6 +134,10 @@ def build(inputs: dict, log=print) -> dict:
         log(f"  dropping incomplete price rows after {session:%Y-%m-%d}")
     etf, stocks = etf.loc[:session], stocks.loc[:session]
     spy = etf[cfg.BENCHMARK].dropna()
+    # full benchmark history (demo data has none: fall back to the ETF window)
+    spy_long = inputs.get("spy_long")
+    spy_long = spy if spy_long is None or spy_long.dropna().empty else spy_long.dropna().loc[:session]
+    spy_monthly = spy_long.resample("MS").last()  # month-start label, month-end close (econ calendar)
 
     log("Computing breadth...")
     sp_cols = [c for c in cons.loc[cons["sp500"], "yf_symbol"] if c in stocks.columns]
@@ -133,16 +146,17 @@ def build(inputs: dict, log=print) -> dict:
     log("Computing gauges...")
     fg = ind.fear_greed(spy, etf.get(cfg.VIX), etf.get(cfg.SAFE_HAVEN),
                         fred.get(cfg.HY_OAS), fred.get(cfg.IG_OAS), breadth)
-    tech = ind.technical(spy)
+    tech = ind.technical(spy_long)  # trailing windows only, so recent values match a 5-year fit
     liq = ind.liquidity(fred, cfg.LIQUIDITY_FACTORS, tuple(cfg.NETLIQ_PARTS))
     econ = ind.economic(fred, cfg.ECON_INDICATORS, cfg.GDP_SERIES, cfg.ECON_LEAD_MONTHS,
                         coverage_threshold=cfg.ECON_COVERAGE_THRESHOLD)
 
     gauges = {
-        "fear_greed": _summary("fear_greed", fg),
-        "liquidity": _summary("liquidity", liq),
-        "technical": _summary("technical", tech),
-        "economic": _summary("economic", econ, at=econ.extra.get("as_of"), weights=econ.extra.get("weights")),
+        "fear_greed": _summary("fear_greed", fg, market=spy),
+        "liquidity": _summary("liquidity", liq, market=spy_long),
+        "technical": _summary("technical", tech, market=spy_long),
+        "economic": _summary("economic", econ, at=econ.extra.get("as_of"), weights=econ.extra.get("weights"),
+                             market=spy_monthly),
     }
     e = gauges["economic"]
     if e["value"] is not None:
@@ -158,7 +172,9 @@ def build(inputs: dict, log=print) -> dict:
     history = pd.concat({"fear_greed": fg.value, "technical": tech.value,
                          "liquidity": liq.value.reindex(spy.index.union(liq.value.index))}, axis=1, sort=True)
     history = history.loc[history.index >= spy.index[0]].dropna(how="all")
+    history["spy"] = spy.reindex(history.index)
     econ_history = pd.DataFrame({"economic": econ.value, "coverage": econ.extra.get("coverage")})
+    econ_history["spy"] = spy_monthly.reindex(econ_history.index)
 
     log("Computing returns...")
     etf_returns = ind.period_returns(etf.drop(columns=[cfg.VIX], errors="ignore"), cfg.TIMEFRAMES)

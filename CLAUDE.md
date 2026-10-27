@@ -37,6 +37,12 @@ scores.
   (`ui.chart`, `ui.table`, `ui.choice`). Use these rather than calling `st.plotly_chart` directly.
 
 ## Market module conventions
+- Each gauge summary carries `trend` (reading N periods back, `GAUGE_TREND`) and `vs_spy`
+  (`indicators.market_link`: coincident r, next-period Spearman on non-overlapping periods,
+  next-period return by band). Next-period stats use readings `GAUGE_PUBLICATION_LAG`
+  periods after their date; keep that when adding gauges built on lagged data.
+- SPY is also pulled with full history (`BENCHMARK_LONG_PERIOD`) for the technical gauge
+  and those stats; `gauge_history` / `econ_history` include a `spy` column for the charts.
 - All tickers, FRED series, indicator recipes, gauge bands and labels live in
   `modules/market/config.py`. Change recipes there, not in the page.
 - `indicators.py` is pure pandas (no I/O) so it stays testable. Every gauge returns a

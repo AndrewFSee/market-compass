@@ -163,6 +163,27 @@ GAUGES = {
 }
 
 
+# Trend readouts and the "vs S&P 500" statistics, in each gauge's own periods: trading
+# days for the daily gauges, months for the economic gauge.
+GAUGE_TREND = {
+    "fear_greed": {"1 week": 5, "1 month": 21},
+    "liquidity": {"1 week": 5, "1 month": 21},
+    "technical": {"1 week": 5, "1 month": 21},
+    "economic": {"1 month": 1, "3 months": 3},
+}
+GAUGE_HORIZON = {  # (periods, label) for "next period" market returns
+    "fear_greed": (21, "1-month"), "liquidity": (21, "1-month"), "technical": (21, "1-month"),
+    "economic": (3, "3-month"),
+}
+# How many periods after its date a reading could actually be known (publication delays:
+# FRED daily series a day late, weekly ones like WALCL/NFCI up to a week, monthly data
+# about a month). The "next period" statistics only use a reading from then on.
+GAUGE_PUBLICATION_LAG = {"fear_greed": 1, "liquidity": 5, "technical": 0, "economic": 1}
+# The benchmark is also pulled with its full history (since 1993) so the technical
+# gauge and the vs-S&P statistics have decades to work with, not just PRICE_PERIOD.
+BENCHMARK_LONG_PERIOD = "max"
+
+
 def gauge_label(key: str, v: float | None) -> str:
     if v is None:
         return "NO DATA"

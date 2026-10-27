@@ -253,3 +253,37 @@ def test_incomplete_last_session_is_dropped(tmp_path, monkeypatch):
     assert out["breadth"].index[-1] == prev
     assert (out["etf_returns"]["date"] == prev).all()
     assert out["meta"]["as_of"] == prev.strftime("%b %d, %Y")
+
+
+def test_changes_and_market_link_math():
+    import numpy as np
+    from modules.market.indicators import changes, market_link
+    idx = pd.bdate_range("2010-01-01", periods=3000)
+    rng = np.random.default_rng(0)
+    price = pd.Series(100 * np.exp(np.cumsum(rng.normal(0.0003, 0.01, len(idx)))), index=idx)
+
+    ch = changes(pd.Series(np.arange(30.0), index=idx[:30]), idx[29], {"1 week": 5})
+    assert ch["1 week"]["prior"] == 24 and ch["1 week"]["change"] == 5
+
+    # a gauge that *is* the next 21-day return: perfect foresight, so the link is ~1 and reliable
+    fwd = price.shift(-21) / price - 1
+    out = market_link(fwd.dropna(), price, horizon=21, cuts=[0.0])
+    assert out["predictive"] > 0.95 and out["significant"]
+    assert out["bands"][1]["mean"] > 0 > out["bands"][0]["mean"]
+    # the same gauge only known 21 days later has no edge left
+    late = market_link(fwd.dropna(), price, horizon=21, cuts=[0.0], lag=21)
+    assert abs(late["predictive"]) < 0.3
+    # a gauge that is the price itself moves with the market, but noise says nothing about the future
+    assert market_link(price, price, horizon=21, cuts=[100.0])["coincident"] > 0.95
+    noise = pd.Series(rng.normal(size=len(idx)), index=idx)
+    assert not market_link(noise, price, horizon=21, cuts=[0.0])["significant"]
+
+
+def test_gauges_carry_trend_and_market_link(demo_data):
+    from core import store
+    gauges = store.load_json("market", "gauges")
+    for key in ("fear_greed", "liquidity", "technical"):
+        assert set(gauges[key]["trend"]) == {"1 week", "1 month"}, key
+        assert gauges[key]["vs_spy"]["n_coincident"] > 0, key
+    assert set(gauges["economic"]["trend"]) == {"1 month", "3 months"}
+    assert "spy" in store.load_frame("market", "gauge_history")

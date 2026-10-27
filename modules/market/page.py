@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from plotly.subplots import make_subplots
 
 from core import store, ui
 from modules.market import config as cfg
@@ -22,6 +23,53 @@ def load(name: str, kind: str = "frame"):
 
 def _fmt(v, digits=2):
     return "—" if v is None or pd.isna(v) else f"{v:,.{digits}f}"
+
+
+def trend_text(g: dict) -> str:
+    """'**Falling** · ▼ 4.7 vs 1 week ago (30.2) · ▼ 33.5 vs 1 month ago (59.0)'."""
+    trend = g.get("trend") or {}
+    if not trend:
+        return ""
+    flat = (g["hi"] - g["lo"]) * 0.02  # moves under 2% of the scale count as flat
+    parts, signs = [], []
+    for label, t in trend.items():
+        d = t["change"]
+        sign = 0 if abs(d) < flat else (1 if d > 0 else -1)
+        signs.append(sign)
+        arrow = {1: "▲", -1: "▼", 0: "≈"}[sign]
+        prior = f"{t['prior']:.1f}".replace("-", "−")
+        parts.append(f"{arrow} {abs(d):.1f} vs {label} ago ({prior})")
+    word = ("Rising" if all(x > 0 for x in signs) else "Falling" if all(x < 0 for x in signs)
+            else "Flat" if all(x == 0 for x in signs) else "Mixed")
+    return f"**{word}** · " + " · ".join(parts)
+
+
+def _mid(g: dict, band: int) -> float:
+    """A value inside `band`, to name it with the gauge's own labels."""
+    edges = [g["lo"], *g["cuts"], g["hi"]]
+    return (edges[band] + edges[band + 1]) / 2
+
+
+def band_names(cuts: list[float]) -> list[str]:
+    edges = [f"{c:g}".replace("-", "\u2212") for c in cuts]
+    return [f"below {edges[0]}", *(f"{a} to {b}" for a, b in zip(edges[:-1], edges[1:])), f"above {edges[-1]}"]
+
+
+def with_spy_figure(h: pd.DataFrame, g: dict, key: str, height: int = 300) -> go.Figure:
+    """Gauge on top, S&P 500 below, sharing the date axis (two panels, not two y-axes)."""
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.06, row_heights=[0.58, 0.42])
+    fig.add_trace(go.Scatter(x=h.index, y=h[key], mode="lines", line={"width": 2, "color": ui.PALETTE["teal"]},
+                             name=g["title"], hovertemplate="%{y:.1f}<extra>" + g["title"] + "</extra>"),
+                  row=1, col=1)
+    fig.add_trace(go.Scatter(x=h.index, y=h["spy"], mode="lines", line={"width": 2, "color": ui.PALETTE["grey"]},
+                             name="S&P 500 (SPY)", hovertemplate="%{y:,.2f}<extra>SPY</extra>"), row=2, col=1)
+    for c in g["cuts"]:
+        fig.add_hline(y=c, line_dash="dot", line_width=1, opacity=0.5, row=1, col=1)
+    fig.update_yaxes(range=[g["lo"], g["hi"]], row=1, col=1)
+    fig.update_yaxes(title={"text": "SPY", "font": {"size": 11}}, row=2, col=1)
+    fig.update_layout(height=height, margin={"l": 0, "r": 0, "t": 4, "b": 0}, showlegend=False,
+                      hovermode="x unified")
+    return fig
 
 
 # ================================================================= header
@@ -56,6 +104,8 @@ for col, key in zip(cols, cfg.GAUGES):
         st.markdown(f"**{g['title']}**")
         ui.badge(g["label"], color)
         ui.chart(ui.gauge(g["value"], g["lo"], g["hi"], g["cuts"], g["colors"]), key=f"gauge_{key}")
+        if trend_text(g):
+            st.markdown(trend_text(g))
         st.caption(g["caption"])
         if g.get("date"):
             st.caption(f"Reading for {g['date']}")
@@ -70,21 +120,74 @@ for col, key in zip(cols, cfg.GAUGES):
                     comp = comp.sort_values("weight", ascending=False)
                 ui.table(comp, hide_index=True, column_config=col_cfg)
 
-        with st.expander("History"):
-            if key == "economic":
-                h = econ_history["economic"].dropna() if econ_history is not None else pd.Series(dtype=float)
-                h = h[h.index >= h.index.max() - pd.DateOffset(years=10)] if len(h) else h
+        with st.expander("History vs S&P 500"):
+            h = (econ_history if key == "economic" else history)
+            years = 10 if key == "economic" else 2
+            if h is not None and key in h and "spy" in h:
+                h = h[[key, "spy"]].dropna(subset=[key])
+                h = h[h.index >= h.index.max() - pd.DateOffset(years=years)]
+                ui.chart(with_spy_figure(h, g, key), key=f"hist_{key}")
+                link = g.get("vs_spy")
+                if link and link.get("coincident") is not None:
+                    st.caption(f"Moves with the market: r = {link['coincident']:+.2f} "
+                               "(see *Gauges vs the S&P 500* below).")
+
+# ================================================================= gauges vs market
+links = {k: g["vs_spy"] for k, g in gauges.items() if g.get("vs_spy")}
+if links:
+    st.subheader("Gauges vs the S&P 500")
+    with st.container(border=True):
+        rows = []
+        for k, link in links.items():
+            p = link.get("predictive")
+            if p is None:
+                verdict = "too little history"
+            elif link["significant"]:
+                verdict = "higher reading → better returns" if p > 0 else "higher reading → worse returns"
             else:
-                h = history[key].dropna() if history is not None and key in history else pd.Series(dtype=float)
-                h = h[h.index >= h.index.max() - pd.DateOffset(years=2)] if len(h) else h
-            if len(h):
-                fig = go.Figure(go.Scatter(x=h.index, y=h.values, mode="lines", line={"width": 1.6},
-                                           hovertemplate="%{x|%b %d, %Y}: %{y:.1f}<extra></extra>"))
-                for c in g["cuts"]:
-                    fig.add_hline(y=c, line_dash="dot", line_width=1, opacity=0.5)
-                fig.update_layout(height=200, margin={"l": 0, "r": 0, "t": 4, "b": 0},
-                                  yaxis={"range": [g["lo"], g["hi"]]}, showlegend=False)
-                ui.chart(fig, key=f"hist_{key}")
+                verdict = "no reliable signal"
+            rows.append({"Gauge": gauges[k]["title"], "Moves with market": link.get("coincident"),
+                         "Next period": link["horizon_label"], "Next-period link": p,
+                         "Periods": link.get("n_predictive"), "Since": link["start"][:7], "Verdict": verdict})
+        ui.table(pd.DataFrame(rows), hide_index=True, column_config={
+            "Moves with market": st.column_config.NumberColumn(
+                format="%+.2f", help="Correlation of the gauge's change with the S&P 500's return over the same "
+                                     "period. Near +1: it mostly tracks the market."),
+            "Next-period link": st.column_config.NumberColumn(
+                format="%+.2f", help="Rank correlation of the gauge's reading with the S&P 500's return over the "
+                                     "following period, using each reading only once it was published."),
+            "Periods": st.column_config.NumberColumn(format="%d", help="Independent (non-overlapping) periods"),
+        })
+        st.caption("Both measures use non-overlapping periods, so 'Periods' is the real sample size. A link counts "
+                   "as reliable when |link| × √(periods − 1) > 1.96 (95%); with four gauges tested, one false "
+                   "positive is not unusual.")
+
+        names = {gauges[k]["title"]: k for k in links}
+        pick = names[ui.choice("Gauge", list(names), key="vs_spy_gauge")]
+        g, link = gauges[pick], links[pick]
+        span = link["horizon_label"].replace("-", " ")
+        st.markdown(f"**{g['title']}: S&P 500 return over the following {span}, by reading**")
+        bands = band_names(g["cuts"])
+        table = [{"Reading": f"{bands[b['band']]} ({cfg.gauge_label(pick, _mid(g, b['band'])).lower()})",
+                  "Avg S&P return": b["mean"], "Share positive": b["hit"], "Periods": b["periods"]}
+                 for b in link["bands"]]
+        table.append({"Reading": "all readings", "Avg S&P return": link["overall"]["mean"],
+                      "Share positive": link["overall"]["hit"], "Periods": link["overall"]["periods"]})
+        ui.table(pd.DataFrame(table), hide_index=True, column_config={
+            "Avg S&P return": st.column_config.NumberColumn(format="%+.2f%%"),
+            "Share positive": st.column_config.NumberColumn(format="percent"),
+            "Periods": st.column_config.NumberColumn(
+                format="%.0f", help="Days (or months) in the band ÷ period length: the effective number of "
+                                    "independent periods. Under ~20 is mostly noise."),
+        })
+        lag, unit = link.get("lag", 0), ("month" if pick == "economic" else "trading day")
+        note = f"Since {link['start'][:7]}."
+        if lag:
+            note += f" Each reading is used {lag} {unit}{'s' if lag != 1 else ''} after its date, once published."
+        if pick == "economic":
+            note += (" Its history uses today's revised data and indicator weights fitted on the whole sample, "
+                     "so it flatters the gauge.")
+        st.caption(note)
 
 # ================================================================= breadth & style
 st.subheader("Breadth & style")
@@ -236,6 +339,11 @@ with st.expander("Data sources & method"):
         "looser, capped at ±2.5 standard deviations and scaled to ±100.\n"
         "- **Economic:** each indicator's 6-month change is z-scored over 20 years and weighted by its historical "
         "correlation with real GDP growth 6 months later.\n"
-        "- **Breadth** uses S&P 500 members as a proxy for the full NYSE.\n\n"
+        "- **Breadth** uses S&P 500 members as a proxy for the full NYSE.\n"
+        "- **Trend** compares each reading with the one 1 week and 1 month earlier (economic: 1 and 3 months).\n"
+        "- **Gauges vs the S&P 500:** *moves with the market* correlates each gauge's change with SPY's return "
+        "over the same month; *next-period link* rank-correlates the reading with SPY's return over the next "
+        "month (3 months for economic), using each reading only after its inputs were published. Both use "
+        "non-overlapping periods. The technical gauge and these statistics use SPY's full history since 1993.\n\n"
         "All recipes, tickers and series live in `modules/market/config.py`."
     )
