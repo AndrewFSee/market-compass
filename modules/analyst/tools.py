@@ -102,7 +102,8 @@ def credit_overview() -> dict:
                                  "decompression")}
     if s.get("liquidity"):  # say what the *_change fields cover, or they read as weekly
         out["fed_liquidity_usd_bn"] = {**s["liquidity"], "changes_are_over": "13 weeks"}
-    out["tiers"] = [{k: t[k] for k in ("tier", "spread", "change", "percentile")} for t in s.get("tiers", [])]
+    out["tiers_bps"] = [{"tier": t["tier"], "spread": t["spread"], "change_20d": t["change"],
+                         "percentile_3y": t["percentile"]} for t in s.get("tiers", [])]
     st = store.load_frame("credit", "stress")
     if st is not None:
         last = st.dropna(how="all").iloc[-1]
