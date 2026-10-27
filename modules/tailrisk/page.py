@@ -145,6 +145,10 @@ with st.expander("Model and caveats"):
         "simulated kurtosis jumped between ~20 and ~120 run to run). They are now fitted on GARCH-standardized "
         "residuals. Regime paths now start from today's estimated regime instead of the long-run mix (~20% of "
         "paths had started in crisis). Drift is each asset's historical mean, not the GARCH location estimate.\n"
-        "- The crisis regime raises volatility on top of GARCH; without it the simulated deep tail is far "
-        "thinner than history (CVaR 99% ~10% vs ~16%), so it stays."
+        "- The crisis regime raises volatility on top of GARCH, but only for moves into a more stressed "
+        "state than today's (on a crisis day GARCH vol is already high). Without it the simulated deep tail is "
+        "far thinner than history (CVaR 99% ~10% vs ~16%).\n"
+        "- **Validated walk-forward** on 177 non-overlapping 21-day windows since 2012 (`tailrisk validate`): "
+        "5 breaches of the 95% VaR where 8.9 were expected and 0 of the 99% (1.8 expected); both pass the "
+        "Kupiec and Christoffersen tests, so it leans conservative."
     )
