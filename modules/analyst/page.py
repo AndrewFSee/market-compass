@@ -63,8 +63,8 @@ else:
 
 # ================================================================= chat
 st.subheader("Ask about the data")
-st.caption(f"Each question is answered live by {cfg.MODEL} using the same read-only tools, and costs a few cents. "
-           "The conversation resets when you reload the page.")
+st.caption(f"Each question is answered live by {cfg.MODEL} using the same read-only tools and is billed to your "
+           "API key; the tokens used are shown under each answer. The conversation resets when you reload the page.")
 chat = st.session_state.setdefault("analyst_chat", [])
 for turn in chat:
     with st.chat_message(turn["role"]):
