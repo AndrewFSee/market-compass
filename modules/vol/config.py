@@ -4,7 +4,7 @@ from __future__ import annotations
 
 MODULE = "vol"
 
-# The project's own dashboard: `streamlit run src/dashboard/app.py --server.port 8504`
+# The project's own app (registry.LINKS; `python start_apps.py` starts it)
 FULL_APP_URL = "http://localhost:8504"
 
 GROUPS = {

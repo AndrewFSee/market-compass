@@ -35,7 +35,7 @@ now = pd.Timestamp.now()
 missed = int(np.busday_count(as_of.date() + pd.Timedelta(days=1),
                              (now + pd.Timedelta(days=1 if now.hour >= cfg.SCRAPE_DONE_HOUR else 0)).date()))
 st.caption(f"Surfaces through {as_of:%b %d, %Y} · {summary['tickers']} tickers since {summary['history_start']} · "
-           f"from stochastic-vol-surface · [open the full vol dashboard]({cfg.FULL_APP_URL})")
+           f"from stochastic-vol-surface · [open the full vol dashboard]({cfg.FULL_APP_URL}) (if it won't load, run `python start_apps.py`)")
 if missed > cfg.STALE_BUSINESS_DAYS:
     st.warning(f"The option scrapers have not produced data for {missed} weekday{'s' * (missed != 1)}. "
                "Check the DailyScraper / "

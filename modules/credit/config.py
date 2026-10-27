@@ -4,8 +4,7 @@ from __future__ import annotations
 
 MODULE = "credit"
 
-# The project's own full dashboard (start it with `python scripts/run_dashboard.py
-# --server.port 8502` in that folder); linked from the page and the sidebar.
+# The project's own app (registry.LINKS; `python start_apps.py` starts it)
 FULL_APP_URL = "http://localhost:8502"
 
 SPREAD_LABELS = {

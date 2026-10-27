@@ -10,7 +10,8 @@ scores.
 - Install: `pip install -r requirements.txt` (use the project's `.venv`)
 - Refresh data: `python run_jobs.py` (real data) / `python run_jobs.py --demo` (synthetic, no network)
 - One job only: `python run_jobs.py --only market`
-- Run the app: `streamlit run app.py`
+- Run the app: `streamlit run app.py`, or `python start_apps.py` for the hub plus every project's
+  full app (ports 8502-8505; `--status`, `--stop`; logs in `data/logs/apps/`)
 - Tests: `python -m pytest -q` (runs the full pipeline on demo data and renders pages headlessly)
 
 ## Architecture - keep this split
@@ -55,7 +56,7 @@ scores.
 ## Integrated projects (2026-10-26)
 Each has `scripts/publish_to_hub.py` in its own repo, run by `run_jobs.py` with that project's
 venv (see `JOBS` in `registry.py`), a read-only page `modules/<name>/page.py`, and its full app
-as a `LINKS` entry (ports 8502-8505, started by hand; the command is in each module's config).
+as a `LINKS` entry with an `app` launch spec (ports 8502-8505, started by `start_apps.py`).
 Publishers are thin: they call the project's own validated functions, never re-implement them.
 - **credit** (credit-spread-analyzer) -> `data/credit/`: spreads, spreads_bps, stress,
   exposure, tiers, forecast, summary.json. Runs before "market". That project stores spreads

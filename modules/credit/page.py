@@ -45,7 +45,7 @@ if not summary:
 if summary.get("demo"):
     st.warning("Published from the credit project's **cached data file** (demo mode), not a fresh download.")
 st.caption(f"Data through {summary['as_of']} · from credit-spread-analyzer · "
-           f"[open the full credit dashboard]({cfg.FULL_APP_URL})")
+           f"[open the full credit dashboard]({cfg.FULL_APP_URL}) (if it won't load, run `python start_apps.py`)")
 
 # ================================================================= headline tiles
 stress, expo, fc = summary["stress"], summary["exposure"], summary["forecast"]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 MODULE = "tailrisk"
 
-# The project's own dashboard: `streamlit run app/streamlit_app.py --server.port 8505`
+# The project's own app (registry.LINKS; `python start_apps.py` starts it)
 FULL_APP_URL = "http://localhost:8505"
 
 HEDGE_LABELS = {"unhedged": "Unhedged"}  # others are labelled from their names, e.g. put_0.95m

@@ -31,7 +31,7 @@ if not summary:
 model, horizon = summary["model"], summary["model"]["horizon_days"]
 port = ", ".join(f"{t} {w:.0%}" for t, w in summary["portfolio"].items())
 st.caption(f"Portfolio: {port} · fit on daily data {summary['data_start']} to {summary['data_through']} · "
-           f"run {summary['run_at'].replace('T', ' ')} · [open the full tail-risk app]({cfg.FULL_APP_URL})")
+           f"run {summary['run_at'].replace('T', ' ')} · [open the full tail-risk app]({cfg.FULL_APP_URL}) (if it won't load, run `python start_apps.py`)")
 if summary.get("demo"):
     st.warning(f"Demo run with only {model['n_paths']:,} paths: tail estimates are noisy.")
 

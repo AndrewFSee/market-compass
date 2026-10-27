@@ -2,7 +2,8 @@
 
 PAGES  - what appears in the sidebar, grouped by section. "path" is a page script,
          relative to this folder or absolute (e.g. an existing project's app file).
-LINKS  - dashboards you'd rather keep running on their own; shown as sidebar links.
+LINKS  - dashboards you'd rather keep running on their own; shown as sidebar links. With an
+         "app" entry ({"cmd", "cwd"}), `python start_apps.py` starts it on the link's port.
 JOBS   - data refresh run by `python run_jobs.py`. Either
            "module.path:function"  - imported and called in the hub's own Python as
                                      fn(demo=bool, log=callable), or
@@ -20,6 +21,12 @@ PROJECTS = Path(__file__).resolve().parent.parent  # my other projects sit next 
 
 def venv_python(project: Path) -> str:
     return str(project / ".venv" / "Scripts" / "python.exe")
+
+
+def streamlit_app(project: Path, script: str, port: int) -> dict:
+    """Launch spec for a project's own Streamlit app, run with that project's venv."""
+    return {"cmd": [venv_python(project), "-m", "streamlit", "run", script, "--server.port", str(port),
+                    "--server.headless", "true"], "cwd": str(project)}
 
 
 CREDIT = PROJECTS / "credit-spread-analyzer"
@@ -48,11 +55,15 @@ PAGES = {
 }
 
 LINKS = [
-    # full project apps, started separately (see each module's config for the command)
-    {"title": "Credit Spread Analyzer (full)", "url": "http://localhost:8502"},
-    {"title": "Macro Regime Nowcaster (full)", "url": "http://localhost:8503"},
-    {"title": "Vol Surface (full)", "url": "http://localhost:8504"},
-    {"title": "Tail Risk Engine (full)", "url": "http://localhost:8505"},
+    # each project's full app; `python start_apps.py` starts any that aren't running
+    {"title": "Credit Spread Analyzer (full)", "url": "http://localhost:8502",
+     "app": streamlit_app(CREDIT, "src/dashboard/app.py", 8502)},
+    {"title": "Macro Regime Nowcaster (full)", "url": "http://localhost:8503",
+     "app": streamlit_app(MACRO, "src/dashboard/app.py", 8503)},
+    {"title": "Vol Surface (full)", "url": "http://localhost:8504",
+     "app": streamlit_app(VOL, "src/dashboard/app.py", 8504)},
+    {"title": "Tail Risk Engine (full)", "url": "http://localhost:8505",
+     "app": streamlit_app(TAILRISK, "app/streamlit_app.py", 8505)},
 ]
 
 JOBS = {
