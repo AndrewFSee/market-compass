@@ -289,3 +289,26 @@ def test_gauges_carry_trend_and_market_link(demo_data):
         assert gauges[key]["vs_spy"]["n_coincident"] > 0, key
     assert set(gauges["economic"]["trend"]) == {"1 month", "3 months"}
     assert "spy" in store.load_frame("market", "gauge_history")
+
+
+def test_hub_forgets_modules_edited_while_running(tmp_path, monkeypatch):
+    """Editing a module under the hub while the server runs must not leave pages on stale code."""
+    import os
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    helper = src[src.index("def forget_changed_modules"):src.index("forget_changed_modules()\n")]
+    ns = {"os": os, "sys": sys, "ROOT": ROOT}
+    exec(helper, ns)  # just the helper: running app.py itself would start Streamlit navigation
+    forget = ns["forget_changed_modules"]
+
+    import modules.credit.config as cfg_mod
+    forget()                                   # first sight: stamps the import time
+    assert "modules.credit.config" in sys.modules
+    path = cfg_mod.__file__
+    old = os.path.getmtime(path)
+    try:
+        os.utime(path, (old + 5, old + 5))     # "edited" after import
+        assert "modules.credit.config" in forget()
+        assert "modules.credit.config" not in sys.modules
+        import modules.credit.config  # noqa: F401  re-imported fresh
+    finally:
+        os.utime(path, (old, old))
