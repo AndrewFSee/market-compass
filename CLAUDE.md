@@ -79,6 +79,11 @@ Publishers are thin: they call the project's own validated functions, never re-i
 - Tests here use synthetic data in each publisher's schema; if a publisher's output changes,
   update the matching fake in `tests/test_smoke.py`.
 
+## Scheduling
+- `scripts/register_task.ps1` registers `\MarketCompass\HubRefresh` (weekdays 6:15 PM, pythonw,
+  S4U), after the vol scrapers (`\StochasticVolSurface\DailyScraper` 4:30 PM). The user runs
+  it; registering persistent tasks needs their approval.
+
 ## Data quirks
 - Yahoo can serve today's row half-filled after the close (e.g. VIX but not SPY);
   `job.last_complete_session` cuts all market prices to the last complete session.

@@ -40,8 +40,11 @@ def run_external(spec: dict, demo: bool, log) -> None:
     env["HUB_DATA_DIR"] = str(store.data_dir().resolve())
     env["PYTHONPATH"] = os.pathsep.join(p for p in (env.get("PYTHONPATH"), str(ROOT)) if p)
     env["PYTHONIOENCODING"] = "utf-8"
+    # no console window per job when the hub itself runs windowless (pythonw, Task Scheduler)
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     proc = subprocess.Popen(cmd, cwd=spec.get("cwd"), env=env, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+                            stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+                            creationflags=flags)
     for line in proc.stdout:
         log("  " + line.rstrip())
     try:
