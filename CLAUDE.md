@@ -80,11 +80,16 @@ Publishers are thin: they call the project's own validated functions, never re-i
   summary.json. No network: reads what the project's own scheduled scrapers wrote, so the
   page flags missed sessions (the scrapers are the Task Scheduler jobs DailyScraper /
   PrecloseScraper).
-- **tailrisk** (tail-risk-scenario-engine) -> `data/tailrisk/`: fan, pnl_hist, summary.json.
-  One simulation feeds metrics, hedges and the CVaR optimiser. Venv rebuilt 2026-10-26
-  (old one pointed at a deleted C:\Python313). Fixed there: GARCH-t `mu` was used as drift
-  (~2.5x the mean); single-asset copula crash. Results move ~0.2 pts run to run because
-  Yahoo's adjusted prices differ slightly per download.
+- **tailrisk** (tail-risk-scenario-engine) -> `data/tailrisk/`: fan, pnl_hist, summary.json
+  (incl. hedges with puts priced at the VIX, and stress scenarios from its configs/scenarios).
+  One simulation feeds metrics, hedges and the CVaR optimiser. Venv rebuilt 2026-10-26.
+  Fixed there 2026-10-26/27: GARCH-t `mu` used as drift; single-asset copula crash;
+  marginals/copula fitted on raw returns instead of GARCH-standardized residuals (double-
+  counted fat tails, kurtosis 20-120); regime paths started from the long-run mix instead of
+  today; 1-day backtest recursion fed each shock in twice; fixed 1.2% put premium; hedge P&L
+  mixed log and simple returns; parametric stress scenarios were never applied. It now has
+  `tailrisk stress` and `tailrisk validate` (walk-forward of the full 21-day engine). Results
+  move ~0.2 pts run to run because Yahoo's adjusted prices differ slightly per download.
 - Tests here use synthetic data in each publisher's schema; if a publisher's output changes,
   update the matching fake in `tests/test_smoke.py`.
 

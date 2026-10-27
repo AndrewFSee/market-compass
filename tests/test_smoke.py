@@ -226,11 +226,15 @@ def test_tailrisk_page_renders(tmp_path, monkeypatch):
                    {"name": "put_0.95m", "expected_return": 0.0, "var_95": 0.055, "cvar_95": 0.07, "cvar_99": 0.1}],
         "optimal": {"alpha": 0.95, "weights": {"SPY": 0.5, "TLT": 0.5}, "cvar": 0.06, "var": 0.04,
                     "expected_return": 0.006},
-        "crisis_regime": {"prob": 0.7, "long_run_share": 0.2, "vol_ratio": 2.5}})
+        "crisis_regime": {"prob": 0.7, "long_run_share": 0.2, "vol_ratio": 2.5},
+        "hedge_implied_vol": 0.18,
+        "stress": [{"name": "baseline", "description": "no shock", "95%": m, "99%": m},
+                   {"name": "gfc_2008", "description": "replay", "95%": m, "99%": m}]})
     from streamlit.testing.v1 import AppTest
     page = AppTest.from_file(str(ROOT / "modules" / "tailrisk" / "page.py"), default_timeout=60).run()
     assert not page.exception, page.exception
     assert any(m.value == "5.0%" for m in page.metric)
+    assert any(h.value == "Stress scenarios" for h in page.subheader)
 
 
 def test_tailrisk_page_without_data(tmp_path, monkeypatch):

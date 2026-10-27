@@ -105,7 +105,11 @@ with left, st.container(border=True):
         ui.table(rows, hide_index=True, column_config={
             "name": "Strategy", "expected_return": pct("Expected return"), "var_95": pct("VaR 95%"),
             "cvar_95": pct("CVaR 95%"), "cvar_99": pct("CVaR 99%")})
-        st.caption("A put costs its premium in every scenario, which can raise VaR 95% while it cuts the deep tail.")
+        iv = summary.get("hedge_implied_vol")
+        st.caption(("Puts are priced with Black-Scholes at the current VIX "
+                    f"({iv:.1%}), so their cost moves with the market. " if iv else "")
+                   + "In money (simple) returns of a buy-and-hold portfolio, so the unhedged row differs slightly "
+                     "from the log-return figures above; a put costs its premium in every scenario.")
 opt = summary.get("optimal")
 with right, st.container(border=True):
     st.markdown(f"**CVaR-optimal weights** (α = {opt['alpha']:.0%})" if opt else "**CVaR-optimal weights**")
@@ -116,15 +120,31 @@ with right, st.container(border=True):
                    f"configured): CVaR {opt['cvar']:.1%} vs {sim['95%']['cvar']:.1%} now, expected return "
                    f"{opt['expected_return']:+.1%} vs {sim['95%']['mean']:+.1%}.")
 
+# ================================================================= stress
+stress = summary.get("stress") or []
+if stress:
+    st.subheader("Stress scenarios")
+    with st.container(border=True):
+        t = pd.DataFrame([{"Scenario": r["name"], "What it does": r["description"],
+                           "Expected return": r["95%"]["mean"], "VaR 95%": r["95%"]["var"],
+                           "CVaR 95%": r["95%"]["cvar"], "CVaR 99%": r["99%"]["cvar"]} for r in stress])
+        ui.table(t, hide_index=True, column_config={c: st.column_config.NumberColumn(c, format="percent")
+                                                    for c in ("Expected return", "VaR 95%", "CVaR 95%", "CVaR 99%")})
+        st.caption(f"Same portfolio and {horizon}-day horizon. Historical scenarios replay their window in 5-day "
+                   "blocks; parametric ones re-run the simulation with shocked volatility, drift and correlations. "
+                   "Scenario files live in the tail-risk project's configs/scenarios folder.")
+
 with st.expander("Model and caveats"):
     st.markdown(
         f"- **Model:** {model['marginal'].replace('_', '-')} marginals, {model['volatility'].upper()} volatility, "
         f"{model['regime'].replace('_', ' ')} regimes, {model['dependence'].replace('_', ' ')} dependence; "
-        f"{model['n_paths']:,} paths.\n"
-        "- **Fatter than history:** simulated excess kurtosis is "
-        f"{sim['95%']['excess_kurtosis']:.0f} against {hist['95%']['excess_kurtosis']:.0f} in the data, so the "
-        "deep tail (99%) runs a few points above what the record shows. That is the crisis-regime scaling and "
-        "t-copula doing what they were built for, not a calibration to past losses.\n"
-        "- **Drift** is each asset's historical mean daily return (fixed Oct 2026: the GARCH fit's location "
-        "estimate had been used and roughly doubled expected returns)."
+        f"{model['n_paths']:,} paths. Simulated excess kurtosis {sim['95%']['excess_kurtosis']:.1f} vs "
+        f"{hist['95%']['excess_kurtosis']:.1f} in the data.\n"
+        "- **Fixed Oct 2026:** the marginals and copula were fitted on raw returns while GARCH already models "
+        "volatility clustering, which counted the fat tails twice (SPY tail parameter 2.4, infinite kurtosis; "
+        "simulated kurtosis jumped between ~20 and ~120 run to run). They are now fitted on GARCH-standardized "
+        "residuals. Regime paths now start from today's estimated regime instead of the long-run mix (~20% of "
+        "paths had started in crisis). Drift is each asset's historical mean, not the GARCH location estimate.\n"
+        "- The crisis regime raises volatility on top of GARCH; without it the simulated deep tail is far "
+        "thinner than history (CVaR 99% ~10% vs ~16%), so it stays."
     )
