@@ -139,7 +139,7 @@ def all_fred_ids() -> list[str]:
 GAUGES = {
     "fear_greed": {
         "title": "Fear / Greed",
-        "lo": 0, "hi": 100, "cuts": [40, 60], "colors": ["teal", "amber", "red"],
+        "lo": 0, "hi": 100, "cuts": [40, 60], "colors": ["red", "amber", "teal"],  # fear = red, as elsewhere
         "caption": "Market sentiment, 0-100. Built from momentum, breadth, volatility, "
                    "safe-haven and junk-bond demand. Extremes tend to mark reversals.",
     },
