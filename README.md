@@ -503,3 +503,7 @@ docs/screenshots/       Images in this README
 Data: [FRED](https://fred.stlouisfed.org/) (Federal Reserve Bank of St. Louis), Yahoo
 Finance via [`yfinance`](https://github.com/ranaroussi/yfinance), Wikipedia (index
 membership), and the companion projects' own sources.
+
+## License
+
+[MIT](LICENSE). The companion projects carry their own licenses.
