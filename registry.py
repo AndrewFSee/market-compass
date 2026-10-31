@@ -3,7 +3,8 @@
 PAGES  - what appears in the sidebar, grouped by section. "path" is a page script,
          relative to this folder or absolute (e.g. an existing project's app file).
 LINKS  - dashboards you'd rather keep running on their own; shown as sidebar links. With an
-         "app" entry ({"cmd", "cwd"}), `python start_apps.py` starts it on the link's port.
+         "app" entry ({"cmd", "cwd"}), clicking the link starts it on the link's port if it's
+         down (views/launch.py), and `python start_apps.py` starts them all.
 JOBS   - data refresh run by `python run_jobs.py`. Either
            "module.path:function"  - imported and called in the hub's own Python as
                                      fn(demo=bool, log=callable), or
@@ -59,7 +60,7 @@ PAGES = {
 }
 
 LINKS = [
-    # each project's full app; `python start_apps.py` starts any that aren't running
+    # each project's full app; its sidebar link starts it if it isn't running
     {"title": "Credit Spread Analyzer (full)", "url": "http://localhost:8502",
      "app": streamlit_app(CREDIT, "src/dashboard/app.py", 8502)},
     {"title": "Macro Regime Nowcaster (full)", "url": "http://localhost:8503",

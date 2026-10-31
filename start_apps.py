@@ -11,9 +11,6 @@ is passed on, so apps that read the key from the environment get it too.
 from __future__ import annotations
 
 import argparse
-import os
-import re
-import socket
 import subprocess
 import sys
 import time
@@ -22,43 +19,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from core import env, store  # noqa: E402
+from core import env  # noqa: E402
+from core.apps import is_up, missing, pids_on, port_of as _port, start  # noqa: E402
 from registry import LINKS  # noqa: E402
 
 HUB = {"title": "Dashboard hub", "url": "http://localhost:8501",
        "app": {"cmd": [sys.executable, "-m", "streamlit", "run", "app.py", "--server.port", "8501",
                        "--server.headless", "true"], "cwd": str(ROOT)}}
-
-
-def _port(url: str) -> int:
-    return int(url.rsplit(":", 1)[1].split("/")[0])
-
-
-def is_up(port: int) -> bool:
-    with socket.socket() as s:
-        s.settimeout(0.5)
-        return s.connect_ex(("127.0.0.1", port)) == 0
-
-
-def _pids_on(port: int) -> set[int]:
-    out = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True).stdout
-    return {int(m.group(1)) for m in re.finditer(rf"[\d.]+:{port}\s+\S+\s+LISTENING\s+(\d+)", out)}
-
-
-def start(app: dict, port: int) -> subprocess.Popen:
-    log_dir = store.data_dir() / "logs" / "apps"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log = (log_dir / f"{port}.log").open("a", encoding="utf-8")
-    flags = 0
-    if os.name == "nt":  # keep running after this script (and its console) exits, with no window
-        flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-    try:
-        return subprocess.Popen(app["cmd"], cwd=app["cwd"], env=dict(os.environ), stdout=log,
-                                stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                creationflags=flags | getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0))
-    except OSError:  # the parent's job object may not allow breakaway
-        return subprocess.Popen(app["cmd"], cwd=app["cwd"], env=dict(os.environ), stdout=log,
-                                stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, creationflags=flags)
 
 
 def main() -> int:
@@ -71,7 +38,7 @@ def main() -> int:
 
     if args.stop:
         for a in apps:
-            for pid in _pids_on(_port(a["url"])):
+            for pid in pids_on(_port(a["url"])):
                 subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
                 print(f"stopped {a['title']} (pid {pid})")
         return 0
@@ -84,9 +51,9 @@ def main() -> int:
         elif args.status:
             print(f"  down     {a['title']:32s} {a['url']}")
         else:
-            missing = [p for p in (a["app"]["cmd"][0], a["app"]["cwd"]) if not Path(p).exists()]
-            if missing:
-                print(f"  SKIPPED  {a['title']:32s} missing {missing[0]}")
+            gone = missing(a["app"])
+            if gone:
+                print(f"  SKIPPED  {a['title']:32s} missing {gone}")
                 continue
             started.append((a, port, start(a["app"], port)))
     deadline = time.time() + 60

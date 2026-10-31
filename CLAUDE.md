@@ -11,7 +11,9 @@ scores.
 - Refresh data: `python run_jobs.py` (real data) / `python run_jobs.py --demo` (synthetic, no network)
 - One job only: `python run_jobs.py --only market`
 - Run the app: `streamlit run app.py`, or `python start_apps.py` for the hub plus every project's
-  full app (ports 8502-8505; `--status`, `--stop`; logs in `data/logs/apps/`)
+  full app (ports 8502-8505; `--status`, `--stop`; logs in `data/logs/apps/`). The sidebar's
+  "Other dashboards" links go through the hidden page `views/launch.py` (`/launch?app=<port>`),
+  which starts a stopped app (`core/apps.py`, shared with `start_apps.py`) and then forwards to it.
 - Tests: `python -m pytest -q` (runs the full pipeline on demo data and renders pages headlessly)
 
 ## Architecture - keep this split

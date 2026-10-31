@@ -446,3 +446,41 @@ def test_analyst_page_brief_and_chat(tmp_path, monkeypatch):
     assert not at.exception
     assert "Liquidity tightened" in asked["messages"][0]["content"]       # brief passed as context
     assert any(m.value == "Because spreads widened." for m in at.markdown)
+
+
+def test_launch_page_starts_app_then_forwards(tmp_path, monkeypatch):
+    """A sidebar link to a stopped app starts it once, waits for the port, then forwards."""
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    from core import apps
+    started = []
+
+    class Proc:
+        returncode = None
+
+        def poll(self):
+            return None
+
+    def fake_start(app, port):
+        started.append(port)
+        return Proc()
+
+    monkeypatch.setattr(apps, "is_up", lambda port, timeout=0.5: bool(started))
+    monkeypatch.setattr(apps, "missing", lambda app: None)
+    monkeypatch.setattr(apps, "start", fake_start)
+    page = AppTest.from_file(str(ROOT / "views" / "launch.py"), default_timeout=30)
+    page.query_params["app"] = "8502"
+    page.run()
+    assert not page.exception and not page.error
+    assert started == [8502]
+    assert page.link_button[0].url == "http://localhost:8502"
+
+    page = AppTest.from_file(str(ROOT / "views" / "launch.py"), default_timeout=30)  # already up
+    page.query_params["app"] = "8502"
+    page.run()
+    assert started == [8502] and page.link_button[0].url == "http://localhost:8502"
+
+    page = AppTest.from_file(str(ROOT / "views" / "launch.py"), default_timeout=30)
+    page.query_params["app"] = "9999"
+    page.run()
+    assert page.error and started == [8502]

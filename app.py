@@ -36,7 +36,7 @@ def forget_changed_modules(prefixes=("core", "modules", "registry")) -> list[str
 
 
 forget_changed_modules()
-from core import env  # noqa: E402
+from core import apps, env  # noqa: E402
 from registry import LINKS, PAGES  # noqa: E402
 
 env.load()  # .env secrets (FRED_API_KEY, ANTHROPIC_API_KEY) for pages that need them
@@ -62,6 +62,9 @@ for section, pages in PAGES.items():
                                url_path=None if default else slug))
     if entries:
         nav[section] = entries
+# not in the menu: the "Other dashboards" links go through it to start their app if it's down
+nav.setdefault("Hub", []).append(st.Page(str(ROOT / "views" / "launch.py"), title="Launching",
+                                         url_path="launch", visibility="hidden"))
 
 page = st.navigation(nav)
 
@@ -69,6 +72,12 @@ if LINKS:
     with st.sidebar:
         st.caption("Other dashboards")
         for link in LINKS:
-            st.markdown(f"[{link['title']}]({link['url']})")
+            if link.get("app"):
+                up = apps.is_up(apps.port_of(link["url"]), timeout=0.05)  # icon only; runs every rerun
+                st.link_button(link["title"], f"/launch?app={apps.port_of(link['url'])}", type="tertiary",
+                               icon=":material/open_in_new:" if up else ":material/play_arrow:",
+                               help="Running: opens it" if up else "Not running: starts it, then opens it")
+            else:
+                st.markdown(f"[{link['title']}]({link['url']})")
 
 page.run()
