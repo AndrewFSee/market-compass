@@ -143,6 +143,6 @@ Publishers are thin: they call the project's own validated functions, never re-i
 ## GitHub
 - Public at github.com/AndrewFSee/market-compass. The README is written for visitors: it explains
   cloning the four companion repos next to this one, and embeds `docs/screenshots/*.png`.
-- Screenshots were taken from the running hub (real data) with headless Chrome via Playwright in a
+- Screenshots were taken from the running hub (real data, dark theme) with headless Chrome via Playwright in a
   throwaway venv, then cropped to the main column. Retake them if a page's layout changes a lot.
 - `.env.example` lists the keys; `.env` stays git-ignored. Never commit data/ or keys.
