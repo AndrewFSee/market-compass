@@ -97,6 +97,9 @@ Publishers are thin: they call the project's own validated functions, never re-i
 - `scripts/register_task.ps1` registers `\MarketCompass\HubRefresh` (weekdays 6:15 PM, pythonw,
   S4U), after the vol scrapers (`\StochasticVolSurface\DailyScraper` 4:30 PM). The user runs
   it; registering persistent tasks needs their approval.
+- Task triggers created with a UTC offset (`...T16:30:00-04:00`) fire an hour early after DST
+  ends. `scripts/fix_task_timezones.ps1` strips the offset so they follow local time; S4U tasks
+  (HubRefresh, DailyScraper, PrecloseScraper, TickerLake-Daily) need an elevated prompt.
 
 ## Look-alikes (modules/analogs)
 - Job "analogs" runs after "market" (reads `market/long_history` and `credit/spreads`, no
