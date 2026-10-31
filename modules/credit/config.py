@@ -4,7 +4,7 @@ from __future__ import annotations
 
 MODULE = "credit"
 
-# The project's own app (registry.LINKS; `python start_apps.py` starts it)
+# The project's own app (registry.LINKS; the page links to it through the hub's launcher)
 FULL_APP_URL = "http://localhost:8502"
 
 SPREAD_LABELS = {

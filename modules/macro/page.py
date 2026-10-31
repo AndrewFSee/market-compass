@@ -7,7 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from core import store, ui
+from core import apps, store, ui
 from modules.macro import config as cfg
 
 MODULE = cfg.MODULE
@@ -32,7 +32,7 @@ if not summary:
 
 now, panel_info = summary.get("nowcast"), summary.get("panel")
 st.caption(f"Published {summary['run_at'].replace('T', ' ')} · from macro-regime-nowcaster · "
-           f"[open the full macro dashboard]({cfg.FULL_APP_URL}) (if it won't load, run `python start_apps.py`)")
+           f"[open the full macro dashboard]({apps.launch_url(cfg.FULL_APP_URL)}) (starts it if needed)")
 if now is None:
     st.warning("No live nowcast on the last run (demo mode or the run failed); showing the walk-forward panel only.")
 

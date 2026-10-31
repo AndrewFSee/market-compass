@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import inspect
 import math
+import re
 
 import plotly.graph_objects as go
 import streamlit as st
@@ -27,6 +28,11 @@ def table(df, **kwargs) -> None:
         st.dataframe(df, width="stretch", **kwargs)
     else:
         st.dataframe(df, use_container_width=True, **kwargs)
+
+
+def no_math(text: str) -> str:
+    """Escape $ so st.markdown doesn't read "$114bn ... $122bn" as a LaTeX formula."""
+    return re.sub(r"(?<!\\)\$", r"\\$", text)
 
 
 def choice(label: str, options: list[str], key: str, default: str | None = None) -> str:

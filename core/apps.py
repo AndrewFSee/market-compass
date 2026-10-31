@@ -16,6 +16,11 @@ def port_of(url: str) -> int:
     return int(url.rsplit(":", 1)[1].split("/")[0])
 
 
+def launch_url(url: str) -> str:
+    """Hub link that starts the app at `url` if it isn't running, then opens it (views/launch.py)."""
+    return f"/launch?app={port_of(url)}"
+
+
 def is_up(port: int, timeout: float = 0.5) -> bool:
     # Windows retries a refused loopback connection, so a down port always costs the full timeout
     with socket.socket() as s:

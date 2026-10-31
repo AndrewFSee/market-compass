@@ -15,13 +15,25 @@ JOBS   - data refresh run by `python run_jobs.py`. Either
                                      works), plus `--demo` when the hub runs with --demo.
 """
 
+import os
 from pathlib import Path
 
-PROJECTS = Path(__file__).resolve().parent.parent  # my other projects sit next to this one
+# my other projects sit next to this one, unless HUB_PROJECTS_DIR says otherwise
+PROJECTS = Path(os.environ.get("HUB_PROJECTS_DIR") or Path(__file__).resolve().parent.parent)
+
+
+def project(name: str) -> Path:
+    """A project's folder: PROJECTS/<name>, or PROJECTS/<name>/<name> when it was cloned
+    into a folder of the same name."""
+    nested = PROJECTS / name / name
+    return nested if nested.is_dir() else PROJECTS / name
 
 
 def venv_python(project: Path) -> str:
-    return str(project / ".venv" / "Scripts" / "python.exe")
+    """The project's own venv interpreter (Windows or macOS/Linux layout)."""
+    if os.name == "nt":
+        return str(project / ".venv" / "Scripts" / "python.exe")
+    return str(project / ".venv" / "bin" / "python")
 
 
 def streamlit_app(project: Path, script: str, port: int) -> dict:
@@ -30,10 +42,10 @@ def streamlit_app(project: Path, script: str, port: int) -> dict:
                     "--server.headless", "true"], "cwd": str(project)}
 
 
-CREDIT = PROJECTS / "credit-spread-analyzer"
-MACRO = PROJECTS / "macro-regime-nowcaster" / "macro-regime-nowcaster"
-VOL = PROJECTS / "stochastic-vol-surface" / "stochastic-vol-surface"
-TAILRISK = PROJECTS / "tail-risk-scenario-engine"
+CREDIT = project("credit-spread-analyzer")
+MACRO = project("macro-regime-nowcaster")
+VOL = project("stochastic-vol-surface")
+TAILRISK = project("tail-risk-scenario-engine")
 
 PAGES = {
     "Hub": [

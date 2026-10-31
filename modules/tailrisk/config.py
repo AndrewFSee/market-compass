@@ -4,7 +4,7 @@ from __future__ import annotations
 
 MODULE = "tailrisk"
 
-# The project's own app (registry.LINKS; `python start_apps.py` starts it)
+# The project's own app (registry.LINKS; the page links to it through the hub's launcher)
 FULL_APP_URL = "http://localhost:8505"
 
 HEDGE_LABELS = {"unhedged": "Unhedged"}  # others are labelled from their names, e.g. put_0.95m

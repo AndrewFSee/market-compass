@@ -9,7 +9,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from core import env, store
+from core import env, store, ui
 from modules.analyst import config as cfg
 
 MODULE = cfg.MODULE
@@ -54,7 +54,7 @@ else:
                    f"from data through {shown.get('data_as_of')}. Every figure comes from the dashboard's own data; "
                    "check anything that matters on its page.")
     with st.container(border=True):
-        st.markdown(shown["text"])
+        st.markdown(ui.no_math(shown["text"]))
     with st.expander("What the analyst looked at"):
         st.caption(usage_note(shown))
         for c in shown.get("tool_calls", []):
@@ -68,14 +68,14 @@ st.caption(f"Each question is answered live by {cfg.MODEL} using the same read-o
 chat = st.session_state.setdefault("analyst_chat", [])
 for turn in chat:
     with st.chat_message(turn["role"]):
-        st.markdown(turn.get("display", turn["content"]))
+        st.markdown(ui.no_math(turn.get("display", turn["content"])))
         if turn.get("note"):
             st.caption(turn["note"])
 
 question = st.chat_input("e.g. Why is liquidity tight? Is credit agreeing with the equity gauges?")
 if question:
     with st.chat_message("user"):
-        st.markdown(question)
+        st.markdown(ui.no_math(question))
     api_messages = [{"role": t["role"], "content": t["content"]} for t in chat]
     first = question
     if not chat and brief:  # give the first question this morning's brief as context
@@ -94,7 +94,7 @@ if question:
         except Exception as e:  # noqa: BLE001 - show API errors in the chat rather than a traceback
             st.error(f"The request failed: {type(e).__name__}: {e}")
             st.stop()
-        st.markdown(res["text"])
+        st.markdown(ui.no_math(res["text"]))
         st.caption(usage_note(res))
     chat.append({"role": "user", "content": first, "display": question})
     chat.append({"role": "assistant", "content": res["text"], "note": usage_note(res)})

@@ -313,7 +313,8 @@ def test_hub_forgets_modules_edited_while_running(tmp_path, monkeypatch):
         os.utime(path, (old + 5, old + 5))     # "edited" after import
         assert "modules.credit.config" in forget()
         assert "modules.credit.config" not in sys.modules
-        import modules.credit.config  # noqa: F401  re-imported fresh
+        from modules.credit import config as fresh  # the pages' form: must not reuse the package attribute
+        assert fresh is not cfg_mod
     finally:
         os.utime(path, (old, old))
 
@@ -484,3 +485,22 @@ def test_launch_page_starts_app_then_forwards(tmp_path, monkeypatch):
     page.query_params["app"] = "9999"
     page.run()
     assert page.error and started == [8502]
+
+
+def test_job_for_missing_project_is_skipped(tmp_path, monkeypatch):
+    """A project that isn't cloned is skipped with a note, not counted as a failure."""
+    import argparse
+    import run_jobs
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    gone = tmp_path / "not-cloned"
+    monkeypatch.setattr(run_jobs, "JOBS", {"other": {"cmd": [str(gone / ".venv" / "python.exe"), "x.py"],
+                                                     "cwd": str(gone)}})
+    (tmp_path / "logs").mkdir()
+    assert run_jobs.run_all(argparse.Namespace(only=None, demo=True), tmp_path / "logs") == 0
+    assert "other skipped" in (tmp_path / "logs" / "jobs.log").read_text(encoding="utf-8")
+
+
+def test_no_math_escapes_dollars():
+    from core import ui
+    assert ui.no_math("fell $114bn, TGA rose $122bn") == r"fell \$114bn, TGA rose \$122bn"
+    assert ui.no_math(r"already \$5") == r"already \$5"

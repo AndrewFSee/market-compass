@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from core import store, ui
+from core import apps, store, ui
 from registry import JOBS, LINKS, PAGES
 
 st.title("Dashboard hub")
@@ -37,10 +38,13 @@ with c1:
     for section, pages in PAGES.items():
         st.markdown(f"{section}: " + ", ".join(p["title"] for p in pages))
     if LINKS:
-        st.markdown("**Linked dashboards:** " + ", ".join(f"[{l['title']}]({l['url']})" for l in LINKS))
+        st.markdown("**Linked dashboards:** " + ", ".join(f"[{l['title']}]({apps.launch_url(l['url']) if l.get('app') else l['url']})"
+                                                     for l in LINKS))
 with c2:
     st.markdown("**Data jobs**")
     for name, target in JOBS.items():
+        if isinstance(target, dict):  # another project's publisher, run with its own venv
+            target = f"{Path(target['cwd']).name}: {' '.join(str(c) for c in target['cmd'][1:])}"
         st.markdown(f"`{name}` → `{target}`")
 
 with st.expander("Adding a project"):

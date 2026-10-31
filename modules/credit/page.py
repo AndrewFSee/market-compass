@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from core import store, ui
+from core import apps, store, ui
 from modules.credit import config as cfg
 
 MODULE = cfg.MODULE
@@ -46,7 +46,7 @@ if not summary:
 if summary.get("demo"):
     st.warning("Published from the credit project's **cached data file** (demo mode), not a fresh download.")
 st.caption(f"Data through {summary['as_of']} · from credit-spread-analyzer · "
-           f"[open the full credit dashboard]({cfg.FULL_APP_URL}) (if it won't load, run `python start_apps.py`)")
+           f"[open the full credit dashboard]({apps.launch_url(cfg.FULL_APP_URL)}) (starts it if needed)")
 
 # ================================================================= headline tiles
 stress, expo, fc = summary["stress"], summary["exposure"], summary["forecast"]

@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from core import env, store  # noqa: E402
+from core.apps import missing  # noqa: E402
 from registry import JOBS  # noqa: E402
 
 env.load()
@@ -110,6 +111,10 @@ def run_all(args, log_dir: Path) -> int:
         if args.only and name not in args.only:
             continue
         log(f"=== {name} ===")
+        gone = missing(target) if isinstance(target, dict) else None
+        if gone:  # that project isn't cloned (or has no venv) here: not an error
+            log(f"=== {name} skipped: {gone} not found ===")
+            continue
         start = time.time()
         try:
             run_job(target, args.demo, log)

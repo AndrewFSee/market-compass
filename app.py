@@ -31,6 +31,10 @@ def forget_changed_modules(prefixes=("core", "modules", "registry")) -> list[str
         loaded = mod.__dict__.setdefault("__hub_mtime__", mtime)
         if mtime > loaded:
             del sys.modules[name]
+            # `from core import apps` takes the package attribute if it's there, so drop that too
+            parent, _, child = name.rpartition(".")
+            if parent in sys.modules and getattr(sys.modules[parent], child, None) is mod:
+                delattr(sys.modules[parent], child)
             dropped.append(name)
     return dropped
 
@@ -74,7 +78,7 @@ if LINKS:
         for link in LINKS:
             if link.get("app"):
                 up = apps.is_up(apps.port_of(link["url"]), timeout=0.05)  # icon only; runs every rerun
-                st.link_button(link["title"], f"/launch?app={apps.port_of(link['url'])}", type="tertiary",
+                st.link_button(link["title"], apps.launch_url(link["url"]), type="tertiary",
                                icon=":material/open_in_new:" if up else ":material/play_arrow:",
                                help="Running: opens it" if up else "Not running: starts it, then opens it")
             else:
