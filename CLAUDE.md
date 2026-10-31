@@ -49,7 +49,7 @@ scores.
   `modules/market/config.py`. Change recipes there, not in the page.
 - `indicators.py` is pure pandas (no I/O) so it stays testable. Every gauge returns a
   `Composite(value, raw, scores, extra)`.
-- Data sources: FRED public CSV endpoint (no key), Yahoo Finance via `yfinance`,
+- Data sources: FRED API (`FRED_API_KEY`, keyless CSV as fallback), Yahoo Finance via `yfinance`,
   Wikipedia for index members. Breadth uses S&P 500 members as an NYSE proxy.
 - Any new input must also get a synthetic version in `modules/market/demo.py` so
   `--demo` and the tests keep working offline.
@@ -62,7 +62,7 @@ scores.
   only reads (see the status below for the four already done this way).
 
 ## Integrated projects (2026-10-26)
-Each has `scripts/publish_to_hub.py` in its own repo, run by `run_jobs.py` with that project's
+Each has `scripts/publish_to_hub.py` in its own repo (on `main`, pushed 2026-10-31), run by `run_jobs.py` with that project's
 venv (see `JOBS` in `registry.py`), a read-only page `modules/<name>/page.py`, and its full app
 as a `LINKS` entry with an `app` launch spec (ports 8502-8505, started by `start_apps.py`).
 Publishers are thin: they call the project's own validated functions, never re-implement them.
@@ -92,6 +92,8 @@ Publishers are thin: they call the project's own validated functions, never re-i
   mixed log and simple returns; parametric stress scenarios were never applied. It now has
   `tailrisk stress` and `tailrisk validate` (walk-forward of the full 21-day engine). Results
   move ~0.2 pts run to run because Yahoo's adjusted prices differ slightly per download.
+- Projects are found next to the hub (`registry.project()`: `<name>` or `<name>/<name>`; override
+  with `HUB_PROJECTS_DIR`). A job whose project or venv is missing is skipped, not failed.
 - Tests here use synthetic data in each publisher's schema; if a publisher's output changes,
   update the matching fake in `tests/test_smoke.py`.
 
@@ -137,3 +139,10 @@ Publishers are thin: they call the project's own validated functions, never re-i
 - Possible additions: put/call ratio component, true NYSE A/D data, 52-week high/low
   history panel, sector/factor relative-strength analysis page, alerts when a gauge
   crosses a band.
+
+## GitHub
+- Public at github.com/AndrewFSee/market-compass. The README is written for visitors: it explains
+  cloning the four companion repos next to this one, and embeds `docs/screenshots/*.png`.
+- Screenshots were taken from the running hub (real data) with headless Chrome via Playwright in a
+  throwaway venv, then cropped to the main column. Retake them if a page's layout changes a lot.
+- `.env.example` lists the keys; `.env` stays git-ignored. Never commit data/ or keys.
