@@ -6,7 +6,8 @@ dashboards, plus an AI analyst that reads all of them and writes a daily brief.*
 Market Compass is two things:
 
 - **Its own market dashboards.** Four regime gauges, S&P 500 breadth, style/sector/factor
-  performance, a market map, a historical look-alike engine and a Claude-powered analyst.
+  performance and rotation, a market map, a historical look-alike engine and a
+  Claude-powered analyst.
   All of it is built from public data.
 - **A home for four companion projects.** Each companion is its own repository with its own
   models and dependencies. A nightly job runs each project's publish script with that
@@ -44,7 +45,7 @@ Market Compass is two things:
 | Page | Needs | What it shows |
 |---|---|---|
 | **Home** | - | Data freshness for every module, and everything registered with the hub |
-| **Market Environment** | this repo | Fear/Greed, Liquidity, Technical and Economic regime gauges, each with a trend, a history chart against the S&P 500 and a measured link to next-period returns. Also S&P 500 breadth, a style/size grid, sector and factor tiles, and an S&P 500 / Nasdaq 100 market map. |
+| **Market Environment** | this repo | Fear/Greed, Liquidity, Technical and Economic regime gauges, each with a trend, a history chart against the S&P 500 and a measured link to next-period returns. Also S&P 500 breadth, a style/size grid, sector and factor tiles, a sector/style/factor rotation map with overbought/oversold readings vs SPY, and an S&P 500 / Nasdaq 100 market map. |
 | **Look-alikes** | this repo | The 15 most similar past market states since 1997 and what the S&P 500 did next, with the method's own walk-forward track record |
 | **Analyst** | this repo + Anthropic API key | A daily brief written by Claude from the hub's data, and a chat for follow-up questions |
 | **Credit** | [credit-spread-analyzer](https://github.com/AndrewFSee/credit-spread-analyzer) | Credit-stress regime, spread forecast, rating tiers, CCC-B decompression, Fed liquidity |
@@ -194,6 +195,23 @@ and 22 factor ETFs. Each tile has 1-day to 2-year returns, coloured as leading, 
 lagging relative to SPY.
 
 ![Breadth donut and A/D line, style/size grid, and sector performance tiles](docs/screenshots/market-breadth.png)
+
+**Rotation map.** This shows where each sector, style or factor ETF is in its strength cycle
+against SPY, on weekly closes:
+
+- **Across:** relative strength compared with its own 26-week norm.
+- **Up:** how fast that reading changed over the last 4 weeks.
+
+Tails show the last 4 to 26 weeks. Strength tends to cycle clockwise:
+Improving → Leading → Weakening → Lagging. ETFs whose RSI on the ETF/SPY ratio is ≥ 70 or
+≤ 30 are tagged overbought or oversold vs SPY. Below the map are:
+
+- the ETFs that entered a new quadrant in the last 4 weeks;
+- a table sorted clockwise around the map;
+- an expander that tests the whole approach on full history (see
+  [Methodology](#rotation-map)).
+
+![Sector rotation map: relative trend vs momentum with 4-week tails, and quadrant changes](docs/screenshots/market-rotation.png)
 
 **Market map.** An S&P 500 or Nasdaq 100 treemap, sized by market cap and coloured by
 return over the chosen period. Click a sector to zoom in.
@@ -370,6 +388,43 @@ All recipes live in `modules/market/config.py` and the pure-pandas
 **Breadth** uses S&P 500 members as a proxy for the NYSE, because free NYSE-wide
 advance/decline data is hard to find.
 
+### Rotation map
+
+The rotation map is the hub's own relative-rotation view, not the proprietary JdK RS-Ratio
+formula. Everything is calculated on weekly closes of the ETF / SPY ratio:
+
+- **Trend:** the log ratio minus its 26-week average, in standard deviations of that gap
+  over the last 52 weeks.
+- **Momentum:** the change in trend over 4 weeks.
+- **Overbought / oversold:** a 14-week RSI of the ratio.
+
+The job downloads each ETF's full history and checks the map on non-overlapping 4-week
+periods. Results are reported separately for before and after 2015, measured against the
+group's average:
+
+- **Candidate measures.** Eight are compared (10/26/52-week trend, 4/13/52-week relative
+  return, 12-month-ex-last-month momentum, relative RSI). Each is scored by its
+  cross-sectional rank correlation with the next 4 weeks' relative return.
+- **Quadrants and rotation.** The page shows the next-4-week return for each quadrant, how
+  often ETFs move clockwise vs counter-clockwise, and what followed overbought and
+  oversold readings.
+
+On 1999–2026 data:
+
+- **No measure forecasts reliably.** The best, 12-month-ex-last-month momentum, has rank
+  correlations of +0.03 to +0.08 with t ≤ 2, and even those don't hold for every group.
+- **Leading didn't keep leading.** For sectors, Leading beat the group before 2015 and
+  trailed it since.
+- **Clockwise motion is partly arithmetic.** It is about 2.4× as common as
+  counter-clockwise, but momentum is the change in trend, so any swing traces a clockwise
+  loop.
+- **Overbought sectors gave something back.** The most consistent finding: a sector with
+  relative RSI ≥ 70 trailed the other sectors by about 0.4% over the next 4 weeks in both
+  periods. It fell 55% of the time.
+
+26-week trend with 4-week momentum was picked for readability: it rotated cleanly without
+the zig-zag of shorter windows.
+
 ### Look-alikes
 
 `modules/analogs/engine.py` is pure and fully testable:
@@ -487,8 +542,9 @@ docs/screenshots/       Images in this README
 
 ## Limitations
 
-- **The gauges describe the market; they don't forecast it.** None currently shows a
-  reliable link to next-period S&P 500 returns, and the page says so.
+- **The gauges and the rotation map describe the market; they don't forecast it.** No
+  gauge currently shows a reliable link to next-period S&P 500 returns, and no rotation
+  measure reliably ranks next month's sector winners. The pages say so.
 - **Calibration.** The liquidity gauge never reached its "loose" band in five years of
   history. The technical gauge ranks against the trailing 2 years, so ordinary pullbacks
   after a strong run can read "bearish". Both are open calibration items.

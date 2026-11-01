@@ -1,6 +1,7 @@
 """Market Environment page. Reads only from the hub data folder."""
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -281,6 +282,193 @@ with st.container(border=True):
     else:
         rows.sort(key=lambda r: r[0])
     ui.tiles(rows, cfg.FLAT_BAND[sf_tf], columns=4)
+
+# ================================================================= rotation map
+QUAD_COLORS = {"Leading": ui.PALETTE["teal"], "Weakening": ui.PALETTE["amber"], "Lagging": ui.PALETTE["red"],
+               "Improving": "#5B8DEF"}
+QUAD_ORDER = list(QUAD_COLORS)  # clockwise from top right, as in indicators.QUADRANTS
+ARROWS = "→↗↑↖←↙↓↘"
+
+
+def _rgba(hex_color: str, alpha: float) -> str:
+    h = hex_color.lstrip("#")
+    return f"rgba({int(h[:2], 16)},{int(h[2:4], 16)},{int(h[4:], 16)},{alpha})"
+
+
+def heading(dx, dy) -> str:
+    if dx is None or dy is None or pd.isna(dx) or pd.isna(dy):
+        return ""
+    return ARROWS[int(((np.degrees(np.arctan2(dy, dx)) + 22.5) % 360) // 45)]
+
+
+def quad_of(x: float, y: float) -> str:
+    return QUAD_ORDER[0 if x >= 0 and y >= 0 else 1 if x >= 0 else 2 if y < 0 else 3]
+
+
+def stretch(rel_rsi) -> str:
+    lo, hi = cfg.ROTATION_RSI_CUTS
+    if rel_rsi is None or pd.isna(rel_rsi):
+        return ""
+    return "Overbought" if rel_rsi >= hi else "Oversold" if rel_rsi <= lo else ""
+
+
+def rotation_map(path: pd.DataFrame, now: pd.DataFrame) -> go.Figure:
+    xlim = max(2.0, path["x"].abs().max() * 1.12)
+    ylim = max(2.0, path["y"].abs().max() * 1.12)
+    fig = go.Figure()
+    for name, (x0, x1, y0, y1) in {"Leading": (0, xlim, 0, ylim), "Weakening": (0, xlim, -ylim, 0),
+                                   "Lagging": (-xlim, 0, -ylim, 0), "Improving": (-xlim, 0, 0, ylim)}.items():
+        fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, line={"width": 0}, layer="below",
+                      fillcolor=_rgba(QUAD_COLORS[name], 0.10))
+        fig.add_annotation(x=0.97 * (x1 if x1 > 0 else x0), y=0.95 * (y1 if y1 > 0 else y0), text=f"<b>{name}</b>",
+                           showarrow=False, xanchor="right" if x1 > 0 else "left",
+                           yanchor="top" if y1 > 0 else "bottom", font={"size": 14, "color": QUAD_COLORS[name]})
+    for _, r in now.iterrows():
+        p = path[path["ticker"] == r["ticker"]]
+        n = len(p)
+        color = QUAD_COLORS[r["quadrant"]]
+        tag = {"Overbought": " ▲OB", "Oversold": " ▼OS"}.get(stretch(r["rel_rsi"]), "")
+        fig.add_trace(go.Scatter(
+            x=p["x"], y=p["y"], mode="lines+markers+text", name=f"{r['ticker']} · {r['name']}",
+            line={"color": _rgba(color, 0.45), "width": 1.6, "shape": "spline", "smoothing": 0.6},
+            marker={"color": color, "size": [5] * (n - 1) + [13],
+                    "opacity": list(np.linspace(0.35, 0.8, n - 1)) + [1.0] if n > 1 else [1.0]},
+            text=[""] * (n - 1) + [f"<b>{r['ticker']}</b>{tag}"], textposition="middle right",
+            customdata=[[d.strftime("%b %d, %Y"), r["name"]] for d in p["date"]],
+            hovertemplate=f"<b>{r['ticker']}</b> · %{{customdata[1]}}<br>%{{customdata[0]}}<br>"
+                          "Trend %{x:.2f} · Momentum %{y:.2f}<extra></extra>",
+        ))
+    fig.update_layout(height=620, margin={"l": 0, "r": 0, "t": 10, "b": 0}, hovermode="closest",
+                      legend={"font": {"size": 11}, "itemclick": "toggle", "itemdoubleclick": "toggleothers"})
+    fig.update_xaxes(range=[-xlim, xlim], zeroline=True, zerolinewidth=1.5,
+                     title=f"Relative trend: vs its {cfg.ROTATION_TREND_WEEKS}-week norm (σ) →")
+    fig.update_yaxes(range=[-ylim, ylim], zeroline=True, zerolinewidth=1.5,
+                     title=f"Relative momentum: {cfg.ROTATION_MOMENTUM_WEEKS}-week change in trend →")
+    return fig
+
+
+def _pct(v):
+    return None if v is None else v * 100
+
+
+def rotation_evidence(stats: dict, group: str) -> None:
+    g = stats["groups"].get(group)
+    if not g:
+        st.info("No statistics for this group yet.")
+        return
+    h, split = stats["horizon_weeks"], pd.Timestamp(stats["split"])
+    per = g["periods"]
+    labels = {"before": f"before {split.year}", "after": f"{split.year} on"}
+    spans = {k: (f"{per[k]['start'][:4]}–{per[k]['end'][:4]}" if per[k]["start"] else "no data") for k in per}
+    st.markdown(f"**Which measures predicted the next {h} weeks?** Rank correlation across the {group.lower()} "
+                f"between each reading and its return over the next {h} weeks, on non-overlapping periods.")
+    rows = []
+    for c in g["candidates"]:
+        row = {"Measure": c["name"]}
+        for k in ("before", "after"):
+            row[f"IC {labels[k]}"] = c[k]["ic"]
+            row[f"t {labels[k]}"] = c[k]["t"]
+        rows.append(row)
+    num = st.column_config.NumberColumn
+    ui.table(pd.DataFrame(rows), hide_index=True, column_config={
+        **{f"IC {labels[k]}": num(format="%+.3f", help=f"Mean rank correlation, {spans[k]}. "
+                                  "0 = no information; ±0.05 is already decent for a cross-section.")
+           for k in labels},
+        **{f"t {labels[k]}": num(format="%+.1f", help="t-statistic of the mean; beyond ±2 is unlikely to be "
+                                 "luck, if this were the only measure tested.") for k in labels},
+    })
+    st.markdown(f"**How each quadrant did over the next {h} weeks**, vs the group's average")
+    qrows = []
+    for q in QUAD_ORDER:
+        row = {"Quadrant": q}
+        for k in ("before", "after"):
+            v = per[k]["quadrants"][q]
+            row[f"Next {h} wks, {labels[k]}"] = _pct(v["mean"])
+            row[f"Readings, {labels[k]}"] = v["n"]
+        qrows.append(row)
+    ui.table(pd.DataFrame(qrows), hide_index=True, column_config={
+        f"Next {h} wks, {labels[k]}": num(format="%+.2f%%") for k in labels})
+    lines = []
+    lo, hi = stats["rsi_cuts"]
+    for k in ("before", "after"):
+        p = per[k]
+        if not p["moves"]:
+            continue
+        m = p["moves"]
+        line = (f"- **{labels[k].capitalize()}** ({spans[k]}): {h} weeks later an ETF had moved one quadrant "
+                f"clockwise {m['clockwise']:.0%} of the time, counter-clockwise {m['counter']:.0%}, stayed "
+                f"{m['stay']:.0%}, jumped across {m['opposite']:.0%}.")
+        for side, word, cut in (("overbought", "fell back", f"≥ {hi}"), ("oversold", "bounced", f"≤ {lo}")):
+            e = p[side]
+            if e["n"]:
+                line += (f" {side.capitalize()} (relative RSI {cut}): next {h} weeks {e['mean'] * 100:+.2f}% vs "
+                         f"the group, {word} {e['reversed']:.0%} of {e['n']} times.")
+        lines.append(line)
+    if lines:
+        st.markdown("\n".join(lines))
+    st.caption("Clockwise motion is partly built in: momentum is the change in trend, so any swing in "
+               "relative strength traces a clockwise loop. The map shows where each ETF is in its cycle, not how "
+               "far it will go. Several measures were tested, so one good-looking t-statistic can be luck; a "
+               "result that holds in both periods is the one to trust.")
+
+
+st.markdown("##### Rotation map")
+rot_path, rot_now, rot_stats = load("rotation_path"), load("rotation_now"), load("rotation_stats", "json")
+with st.container(border=True):
+    if rot_now is None or rot_now.empty or rot_path is None:
+        st.info("No rotation data yet. Run `python run_jobs.py`.")
+    else:
+        groups = [g for g in cfg.ROTATION_GROUPS if (rot_now["group"] == g).any()]
+        c1, c2 = st.columns([1.4, 1], vertical_alignment="center")
+        with c1:
+            rgroup = ui.choice("Group", groups, key="rot_group")
+        with c2:
+            tail = int(ui.choice("Tail", ["4 wk", "8 wk", "13 wk", "26 wk"], key="rot_tail").split()[0])
+        now = rot_now[rot_now["group"] == rgroup].sort_values("angle")
+        path = rot_path[rot_path["group"] == rgroup].sort_values("date")
+        path = path.groupby("ticker", group_keys=False).tail(tail + 1)
+        ui.chart(rotation_map(path, now), key="rotation_map")
+
+        # quadrant changes over the last momentum window, and stretched readings
+        m = cfg.ROTATION_MOMENTUM_WEEKS
+        moved = {}  # destination quadrant -> tickers that entered it
+        for _, r in now.iterrows():
+            p = rot_path[(rot_path["group"] == rgroup) & (rot_path["ticker"] == r["ticker"])].sort_values("date")
+            if len(p) > m and quad_of(p["x"].iloc[-1 - m], p["y"].iloc[-1 - m]) != r["quadrant"]:
+                moved.setdefault(r["quadrant"], []).append(r["ticker"])
+        a, b, c = st.columns(3)
+        a.markdown(f"**Entered a quadrant ({m} wks)**  \n"
+                   + ("  \n".join(f"→ {q}: {', '.join(moved[q])}" for q in QUAD_ORDER if q in moved) or "none"))
+        b.markdown("**Overbought vs SPY**  \n" + (", ".join(now.loc[now["rel_rsi"] >= cfg.ROTATION_RSI_CUTS[1],
+                                                                  "ticker"]) or "none"))
+        c.markdown("**Oversold vs SPY**  \n" + (", ".join(now.loc[now["rel_rsi"] <= cfg.ROTATION_RSI_CUTS[0],
+                                                                "ticker"]) or "none"))
+
+        table = pd.DataFrame({
+            "ETF": now["ticker"], "Name": now["name"], "Quadrant": now["quadrant"],
+            "Heading": [heading(dx, dy) for dx, dy in zip(now["dx"], now["dy"])],
+            "Trend": now["x"], "Momentum": now["y"], "Rel. RSI": now["rel_rsi"],
+            "Stretch": [stretch(v) for v in now["rel_rsi"]], f"{m}-wk vs SPY": now["rel_ret"], "RSI": now["rsi"],
+        })
+        num = st.column_config.NumberColumn
+        ui.table(table, hide_index=True, height=35 * (len(table) + 1) + 3, column_config={
+            "Heading": st.column_config.TextColumn(help=f"Direction of travel on the map over the last {m} weeks"),
+            "Trend": num(format="%+.2f", help="Across: relative strength vs SPY compared with its own "
+                                              f"{cfg.ROTATION_TREND_WEEKS}-week norm, in standard deviations"),
+            "Momentum": num(format="%+.2f", help=f"Up: change in trend over the last {m} weeks"),
+            "Rel. RSI": st.column_config.ProgressColumn(
+                format="%.0f", min_value=0, max_value=100, color=ui.PALETTE["grey"],
+                help=f"{cfg.ROTATION_RSI_WEEKS}-week RSI of the ETF / SPY ratio. "
+                     f"≥ {cfg.ROTATION_RSI_CUTS[1]} overbought, ≤ {cfg.ROTATION_RSI_CUTS[0]} oversold vs SPY"),
+            f"{m}-wk vs SPY": num(format="%+.1f%%"),
+            "RSI": num(format="%.0f", help="The ETF's own 14-day RSI (absolute, not relative to SPY)"),
+        })
+        st.caption(f"Weekly closes through {path['date'].max():%b %d, %Y}, relative to SPY. Sorted clockwise "
+                   "from the top of Leading. Strength tends to cycle Improving → Leading → Weakening → Lagging. "
+                   "▲OB / ▼OS on the map = overbought / oversold vs SPY. Click legend entries to hide ETFs.")
+        if rot_stats:
+            with st.expander("Does the map predict anything? Tested on the full history"):
+                rotation_evidence(rot_stats, rgroup)
 
 # ================================================================= treemap
 st.subheader("Market map")

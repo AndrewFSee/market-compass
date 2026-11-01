@@ -54,6 +54,14 @@ scores.
 - Any new input must also get a synthetic version in `modules/market/demo.py` so
   `--demo` and the tests keep working offline.
 - Keep `python -m pytest -q` passing after every change; add a test for new calculations.
+- Rotation map (`job.rotation`, `indicators` rotation section, settings `ROTATION_*`): weekly
+  ETF/SPY ratio; trend = 26-wk gap in sd, momentum = its 4-wk change, overbought/oversold =
+  14-wk RSI of the ratio. Uses full-history downloads (`ROTATION_PERIOD`) so `rotation_stats`
+  can test candidates before/after `ROTATION_SPLIT`. Measured 2026-11-01: no candidate ranks
+  next-4-week winners reliably (best: 12-1 momentum, IC +0.03-0.08, t <= 2); clockwise
+  motion is mostly arithmetic (momentum = change in trend); sectors at relative RSI >= 70
+  trailed the group ~0.4% over 4 weeks in both halves (55% hit). The page's expander states
+  this from the numbers; keep it that way if the recipe changes.
 
 ## Integrating my other Streamlit projects
 - Quick: add the project's script to `PAGES` with an absolute path and remove its

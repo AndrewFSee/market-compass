@@ -65,14 +65,16 @@ def fetch_inputs(log=print) -> dict:
     long = sources.download_closes([cfg.BENCHMARK, cfg.VIX], cfg.BENCHMARK_LONG_PERIOD, log=log)
     spy_long = long[cfg.BENCHMARK] if cfg.BENCHMARK in long else None
     vix_long = long[cfg.VIX] if cfg.VIX in long else None
+    log("Fetching rotation-map history...")
+    rotation = sources.download_closes(cfg.rotation_tickers(), cfg.ROTATION_PERIOD, log=log)
     log("Fetching index members...")
     cons = sources.fetch_constituents(log)
     log("Fetching stock prices (this takes a minute or two)...")
     stocks = sources.download_closes(cons["yf_symbol"].tolist(), cfg.PRICE_PERIOD, log=log)
     caps = _market_caps(cons["yf_symbol"].tolist(), log)
     missing += [t for t in cfg.all_etf_tickers() if t not in etf.columns]
-    return {"fred": fred, "etf": etf, "spy_long": spy_long, "vix_long": vix_long, "constituents": cons, "stocks": stocks,
-            "caps": caps, "missing": missing, "demo": False}
+    return {"fred": fred, "etf": etf, "spy_long": spy_long, "vix_long": vix_long, "rotation_prices": rotation,
+            "constituents": cons, "stocks": stocks, "caps": caps, "missing": missing, "demo": False}
 
 
 # ----------------------------------------------------------------- outputs
@@ -110,6 +112,53 @@ def _summary(key: str, comp: ind.Composite, at=None, weights: dict | None = None
             "date": date.strftime("%Y-%m-%d"), "components": components,
             "trend": ind.changes(s, date, cfg.GAUGE_TREND[key]),
             "vs_spy": {**link, "horizon_label": horizon_label} if link else None}
+
+
+def rotation(daily: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """Rotation map per group: weekly paths, the latest position of each ETF, and how the
+    map's readings were followed historically (config.ROTATION_*)."""
+    wk = ind.weekly(daily)
+    bench, h = wk[cfg.BENCHMARK], cfg.ROTATION_HORIZON
+    split = pd.Timestamp(cfg.ROTATION_SPLIT)
+    periods = {"before": wk.index < split, "after": wk.index >= split}
+    paths, rows = [], []
+    stats = {"horizon_weeks": h, "split": cfg.ROTATION_SPLIT, "rsi_cuts": list(cfg.ROTATION_RSI_CUTS), "groups": {}}
+    for group, names in cfg.ROTATION_GROUPS.items():
+        tickers = [t for t in names if t in wk and wk[t].notna().any()]
+        if len(tickers) < 2:
+            continue
+        lr = ind.log_ratio(wk[tickers], bench)
+        x, y = ind.rotation_axes(lr, cfg.ROTATION_TREND_WEEKS, cfg.ROTATION_MOMENTUM_WEEKS, cfg.ROTATION_Z_WEEKS)
+        rel_rsi = ind.rs_signal(lr, {"kind": "rsi", "weeks": cfg.ROTATION_RSI_WEEKS})
+        quad = ind.quadrant(x, y)
+        m = cfg.ROTATION_MOMENTUM_WEEKS
+        for t in tickers:
+            if pd.isna(x[t].iloc[-1]) or pd.isna(y[t].iloc[-1]):
+                continue  # no current reading (short history or stale prices)
+            path = pd.DataFrame({"x": x[t], "y": y[t]}).iloc[-(cfg.ROTATION_TAIL_WEEKS + 1):]
+            paths.append(path.rename_axis("date").reset_index().assign(group=group, ticker=t))
+            xv, yv = float(x[t].iloc[-1]), float(y[t].iloc[-1])
+            own = ind.rsi(daily[t].dropna())
+            rows.append({"group": group, "ticker": t, "name": names[t], "x": xv, "y": yv,
+                         "quadrant": ind.QUADRANTS[int(quad[t].iloc[-1])], "angle": float(ind.clock_angle(xv, yv)),
+                         "dx": _f(xv - x[t].iloc[-1 - m]), "dy": _f(yv - y[t].iloc[-1 - m]),
+                         "rel_rsi": _f(rel_rsi[t].iloc[-1]), "rsi": _f(own.iloc[-1]) if len(own) else None,
+                         "rel_ret": _f((np.exp(lr[t].iloc[-1] - lr[t].iloc[-1 - m]) - 1) * 100)})
+        fwd = lr.shift(-h) - lr
+        g = {"periods": {}, "candidates": []}
+        for key, mask in periods.items():
+            have = x[mask].dropna(how="all").index
+            g["periods"][key] = {"start": have[0].strftime("%Y-%m-%d") if len(have) else None,
+                                 "end": have[-1].strftime("%Y-%m-%d") if len(have) else None,
+                                 **ind.rotation_stats(x[mask], y[mask], rel_rsi[mask], fwd[mask], h,
+                                                      cfg.ROTATION_RSI_CUTS)}
+        for name, spec in cfg.ROTATION_CANDIDATES.items():
+            sig = ind.rs_signal(lr, spec, cfg.ROTATION_Z_WEEKS)
+            g["candidates"].append({"name": name, **{key: ind.ic_summary(ind.cross_ic(sig[mask], fwd[mask], h))
+                                                     for key, mask in periods.items()}})
+        stats["groups"][group] = g
+    path_df = pd.concat(paths, ignore_index=True) if paths else pd.DataFrame(columns=["date", "x", "y", "group", "ticker"])
+    return path_df, pd.DataFrame(rows), stats
 
 
 def last_complete_session(etf: pd.DataFrame, stocks: pd.DataFrame, min_coverage: float = 0.9) -> pd.Timestamp:
@@ -190,6 +239,13 @@ def build(inputs: dict, log=print) -> dict:
         "t10y3m": ind.align(fred.get("T10Y3M"), spy_long.index, limit=10),
     }, index=spy_long.index).astype(float)  # a missing input comes back as None -> NaN column
 
+    log("Computing rotation map...")
+    rot = inputs.get("rotation_prices")
+    # a ticker the long download missed keeps its PRICE_PERIOD history from the ETF pull
+    rot = etf if rot is None or rot.empty else rot.combine_first(etf)
+    rot = rot.loc[:session, [t for t in cfg.rotation_tickers() if t in rot]]
+    rotation_path, rotation_now, rotation_stats = rotation(rot)
+
     log("Computing returns...")
     etf_returns = ind.period_returns(etf.drop(columns=[cfg.VIX], errors="ignore"), cfg.TIMEFRAMES)
     stock_returns = ind.period_returns(stocks, cfg.TIMEFRAMES)
@@ -209,7 +265,9 @@ def build(inputs: dict, log=print) -> dict:
         "counts": {"etfs": int(etf.shape[1]), "stocks": int(stocks.shape[1]), "fred": len(fred)},
     }
     return {"gauges": gauges, "gauge_history": history, "econ_history": econ_history, "long_history": long_history,
-            "breadth": breadth, "etf_returns": etf_returns, "constituents_perf": cons_perf, "meta": meta}
+            "breadth": breadth, "etf_returns": etf_returns, "constituents_perf": cons_perf,
+            "rotation_path": rotation_path, "rotation_now": rotation_now, "rotation_stats": rotation_stats,
+            "meta": meta}
 
 
 def save(outputs: dict) -> None:

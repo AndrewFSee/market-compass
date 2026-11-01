@@ -67,6 +67,48 @@ def style_tickers() -> list[str]:
     return [t for row in STYLE_GRID.values() for t in row.values()]
 
 
+# ---------------------------------------------------------------- rotation map
+# Where each ETF sits in its strength cycle against the benchmark, on weekly closes:
+#   trend    = log(ETF / SPY) minus its ROTATION_TREND_WEEKS average, in standard deviations
+#              of that gap over the last ROTATION_Z_WEEKS (right of centre = stronger than usual)
+#   momentum = change in the trend reading over ROTATION_MOMENTUM_WEEKS (up = improving)
+# 26/4 was picked from the candidates below on real data (2000-2026): none forecast
+# reliably, and it gave the cleanest clockwise rotation without 10-week zig-zag.
+ROTATION_GROUPS = {
+    "Sectors": SECTORS,
+    "Style": {t: f"{size} {style}" for size, row in STYLE_GRID.items() for style, t in row.items()},
+    "Factors": FACTORS,
+}
+ROTATION_PERIOD = "max"  # full history, for the "does it predict?" statistics
+ROTATION_TREND_WEEKS = 26
+ROTATION_MOMENTUM_WEEKS = 4
+ROTATION_Z_WEEKS = 52
+ROTATION_TAIL_WEEKS = 26  # longest tail the page can show
+# Overbought / oversold: RSI of the weekly ETF/SPY ratio. In sectors, readings >= 70 were
+# followed by 0.4-1.0% underperformance vs the other sectors over 4 weeks, in both halves
+# of the history; oversold bounces were weaker.
+ROTATION_RSI_WEEKS = 14
+ROTATION_RSI_CUTS = (30, 70)
+# Statistics: next ROTATION_HORIZON weeks, relative to the group's average; non-overlapping
+# dates; reported before and after ROTATION_SPLIT to show whether a result holds up.
+ROTATION_HORIZON = 4
+ROTATION_SPLIT = "2015-01-01"
+ROTATION_CANDIDATES = {  # kind: trend | trend_change | return | rsi
+    "Trend, 10 weeks": {"kind": "trend", "weeks": 10},
+    "Trend, 26 weeks (map, across)": {"kind": "trend", "weeks": 26},
+    "Trend, 52 weeks": {"kind": "trend", "weeks": 52},
+    "4-wk change of 26-wk trend (map, up)": {"kind": "trend_change", "weeks": 26, "change": 4},
+    "Relative return, 4 weeks": {"kind": "return", "weeks": 4},
+    "Relative return, 13 weeks": {"kind": "return", "weeks": 13},
+    "Relative return, 12 months ex last month": {"kind": "return", "weeks": 52, "skip": 4},
+    "Relative RSI, 14 weeks": {"kind": "rsi", "weeks": 14},
+}
+
+
+def rotation_tickers() -> list[str]:
+    return list(dict.fromkeys([BENCHMARK, *(t for g in ROTATION_GROUPS.values() for t in g)]))
+
+
 def all_etf_tickers() -> list[str]:
     tickers = [BENCHMARK, VIX, SAFE_HAVEN, *style_tickers(), *SECTORS, *FACTORS]
     return list(dict.fromkeys(tickers))  # de-duplicate, keep order

@@ -80,5 +80,5 @@ def generate(seed: int = 7) -> dict:
     for sid in ("NEWORDER", "ACOGNO", "DGORDER", "TOTALSA", "M2REAL"):
         fred[sid] = fred[sid].iloc[:-1]
 
-    return {"fred": fred, "etf": etf, "constituents": constituents, "stocks": stocks,
-            "caps": caps, "missing": [], "demo": True}
+    return {"fred": fred, "etf": etf, "rotation_prices": etf[cfg.rotation_tickers()], "constituents": constituents,
+            "stocks": stocks, "caps": caps, "missing": [], "demo": True}

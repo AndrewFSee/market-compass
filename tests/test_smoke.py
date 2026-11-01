@@ -504,3 +504,46 @@ def test_no_math_escapes_dollars():
     from core import ui
     assert ui.no_math("fell $114bn, TGA rose $122bn") == r"fell \$114bn, TGA rose \$122bn"
     assert ui.no_math(r"already \$5") == r"already \$5"
+
+
+def test_rotation_math():
+    import numpy as np
+    from modules.market import indicators as ind
+    weeks = pd.date_range("2015-01-02", periods=300, freq="W-FRI")
+    t = np.arange(300)
+    bench = pd.Series(100.0, index=weeks)
+    prices = pd.DataFrame({"CYCLE": 100 * np.exp(0.05 * np.sin(2 * np.pi * t / 40)),  # 40-week swing vs SPY
+                           "RISER": 100 * np.exp(0.002 * t + 0.01 * np.sin(t))}, index=weeks)
+    lr = ind.log_ratio(prices, bench)
+    x, y = ind.rotation_axes(lr, trend=10, momentum=2, z_weeks=52)
+    assert x["RISER"].iloc[-1] > 0  # steadily outperforming: right of centre
+    q = ind.quadrant(x, y)["CYCLE"].dropna()
+    steps = (q.diff().dropna() % 4)
+    moves = steps[steps != 0]
+    assert (moves == 1).mean() > 0.9  # a swing in relative strength rotates clockwise
+    assert ind.clock_angle(1.0, 1.0) == pytest.approx(45) and ind.clock_angle(-1.0, 1.0) == pytest.approx(315)
+
+    rng = np.random.default_rng(0)
+    fwd = pd.DataFrame(rng.normal(size=(40, 8)), index=pd.RangeIndex(40))
+    assert ind.cross_ic(fwd, fwd, step=4).round(9).eq(1).all()
+    assert len(ind.cross_ic(fwd, fwd, step=4)) == 10
+    assert ind.ic_summary(ind.cross_ic(-fwd, fwd))["ic"] == pytest.approx(-1)
+
+
+def test_rotation_outputs_on_demo(demo_data):
+    from core import store
+    from modules.market import config as cfg
+    now = store.load_frame("market", "rotation_now")
+    path = store.load_frame("market", "rotation_path")
+    stats = store.load_json("market", "rotation_stats")
+    assert set(now["group"]) == set(cfg.ROTATION_GROUPS)
+    assert now["quadrant"].isin(["Leading", "Weakening", "Lagging", "Improving"]).all()
+    assert now["angle"].between(0, 360).all() and now["rel_rsi"].between(0, 100).all()
+    assert path.groupby(["group", "ticker"]).size().max() <= cfg.ROTATION_TAIL_WEEKS + 1
+    # each quadrant label matches the signs of its own coordinates
+    right, up = now["x"] >= 0, now["y"] >= 0
+    assert (now.loc[right & up, "quadrant"] == "Leading").all()
+    assert (now.loc[~right & ~up, "quadrant"] == "Lagging").all()
+    sectors = stats["groups"]["Sectors"]
+    assert len(sectors["candidates"]) == len(cfg.ROTATION_CANDIDATES)
+    assert sectors["periods"]["after"]["moves"]

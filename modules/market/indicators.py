@@ -322,6 +322,124 @@ def breadth(closes: pd.DataFrame) -> pd.DataFrame:
     return out.iloc[1:]
 
 
+# ----------------------------------------------------------------- rotation
+QUADRANTS = ["Leading", "Weakening", "Lagging", "Improving"]  # clockwise from top right
+
+
+def weekly(closes: pd.DataFrame) -> pd.DataFrame:
+    """Week-ending-Friday closes. The current week is labelled with its latest close date,
+    not a Friday that hasn't happened yet."""
+    wk = closes.resample("W-FRI").last()
+    last = closes.index[-1]
+    return wk.set_axis(wk.index.where(wk.index <= last, last))
+
+
+def log_ratio(prices: pd.DataFrame, bench: pd.Series) -> pd.DataFrame:
+    return np.log(prices.div(bench, axis=0))
+
+
+def rs_trend(lr: pd.DataFrame, weeks: int, z_weeks: int = 52) -> pd.DataFrame:
+    """Log relative strength vs its `weeks` average, in standard deviations of that gap
+    over the last `z_weeks`: 0 = usual, +2 = unusually strong."""
+    gap = lr - lr.rolling(weeks, min_periods=weeks).mean()
+    return gap / gap.rolling(z_weeks, min_periods=z_weeks // 2).std()
+
+
+def rotation_axes(lr: pd.DataFrame, trend: int, momentum: int, z_weeks: int = 52):
+    """(trend, momentum): momentum is the change in trend over `momentum` weeks, so any
+    swing in relative strength traces a clockwise loop."""
+    x = rs_trend(lr, trend, z_weeks)
+    return x, x.diff(momentum)
+
+
+def quadrant(x: pd.DataFrame, y: pd.DataFrame) -> pd.DataFrame:
+    """Index into QUADRANTS (float, NaN where either axis is missing)."""
+    q = np.select([(x >= 0) & (y >= 0), (x >= 0) & (y < 0), (x < 0) & (y < 0)], [0, 1, 2], 3).astype(float)
+    return pd.DataFrame(q, index=x.index, columns=x.columns).where(x.notna() & y.notna())
+
+
+def clock_angle(x, y):
+    """Position on the rotation clock in degrees: 0 = straight up, Leading 0-90,
+    Weakening 90-180, Lagging 180-270, Improving 270-360."""
+    return (90 - np.degrees(np.arctan2(y, x))) % 360
+
+
+def rs_signal(lr: pd.DataFrame, spec: dict, z_weeks: int = 52) -> pd.DataFrame:
+    """One candidate relative-strength measure (see config.ROTATION_CANDIDATES)."""
+    kind, n = spec["kind"], spec["weeks"]
+    if kind == "trend":
+        return rs_trend(lr, n, z_weeks)
+    if kind == "trend_change":
+        return rs_trend(lr, n, z_weeks).diff(spec["change"])
+    if kind == "return":
+        return lr.shift(spec.get("skip", 0)) - lr.shift(n)
+    if kind == "rsi":
+        ratio = np.exp(lr)
+        return pd.DataFrame({c: rsi(ratio[c].dropna(), n) for c in ratio}).reindex(lr.index)
+    raise ValueError(f"unknown signal kind {kind!r}")
+
+
+def cross_ic(signal: pd.DataFrame, fwd: pd.DataFrame, step: int = 1, min_names: int = 5) -> pd.Series:
+    """Rank correlation across ETFs between a signal and the forward return, one value
+    every `step` rows (non-overlapping when step = the forward horizon)."""
+    ok = signal.notna() & fwd.notna()
+    a, b = signal.where(ok).rank(axis=1), fwd.where(ok).rank(axis=1)
+    a, b = a.sub(a.mean(axis=1), axis=0), b.sub(b.mean(axis=1), axis=0)
+    ic = (a * b).sum(axis=1) / np.sqrt((a ** 2).sum(axis=1) * (b ** 2).sum(axis=1))
+    keep = ok.sum(axis=1) >= min_names
+    return ic.iloc[::step][keep.iloc[::step]].dropna()
+
+
+def ic_summary(ic: pd.Series, min_n: int = 8) -> dict:
+    if len(ic) < min_n:
+        return {"ic": None, "t": None, "n": int(len(ic))}
+    sd = ic.std()
+    return {"ic": float(ic.mean()), "t": float(ic.mean() / sd * np.sqrt(len(ic))) if sd > 0 else None,
+            "n": int(len(ic))}
+
+
+def _events(signal: pd.DataFrame, fwd: pd.DataFrame, hit: pd.DataFrame, gap: int) -> np.ndarray:
+    """Forward returns after each `hit`, per ETF, keeping events at least `gap` rows apart."""
+    out = []
+    for c in signal.columns:
+        f = fwd[c].to_numpy()
+        last = -gap
+        for i in np.flatnonzero(hit[c].to_numpy() & ~np.isnan(f)):
+            if i - last >= gap:
+                out.append(f[i])
+                last = i
+    return np.array(out)
+
+
+def rotation_stats(x: pd.DataFrame, y: pd.DataFrame, rel_rsi: pd.DataFrame, fwd: pd.DataFrame,
+                   step: int, rsi_cuts: tuple[float, float]) -> dict:
+    """How the map's readings were followed, on non-overlapping `step`-row periods.
+
+    fwd is each ETF's forward log return vs the benchmark; it is measured here against the
+    group's average, i.e. "did it beat the other members?"."""
+    fwd = fwd.sub(fwd.mean(axis=1), axis=0)
+    q = quadrant(x, y)
+    qs, fs = q.iloc[::step].to_numpy(), fwd.iloc[::step].to_numpy()
+    quads = {}
+    for i, name in enumerate(QUADRANTS):
+        v = fs[(qs == i) & ~np.isnan(fs)]
+        quads[name] = {"mean": float(v.mean()) if len(v) else None, "n": int(len(v))}
+    d = q.shift(-step).iloc[::step].to_numpy() - qs
+    d = d[~np.isnan(d)] % 4
+    moves = ({k: float(np.mean(d == v)) for k, v in (("stay", 0), ("clockwise", 1), ("opposite", 2),
+                                                      ("counter", 3))} if len(d) else {})
+    lo, hi = rsi_cuts
+    over = _events(rel_rsi, fwd, rel_rsi >= hi, step)
+    under = _events(rel_rsi, fwd, rel_rsi <= lo, step)
+    extremes = {
+        "overbought": {"mean": float(over.mean()) if len(over) else None, "n": int(len(over)),
+                       "reversed": float((over < 0).mean()) if len(over) else None},
+        "oversold": {"mean": float(under.mean()) if len(under) else None, "n": int(len(under)),
+                     "reversed": float((under > 0).mean()) if len(under) else None},
+    }
+    return {"quadrants": quads, "moves": moves, **extremes}
+
+
 # ----------------------------------------------------------------- returns
 def period_returns(closes: pd.DataFrame, timeframes: list[str]) -> pd.DataFrame:
     """% return for each column over each timeframe, measured to its latest close."""
