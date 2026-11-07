@@ -213,6 +213,28 @@ Improving → Leading → Weakening → Lagging. ETFs whose RSI on the ETF/SPY r
 
 ![Sector rotation map: relative trend vs momentum with 4-week tails, and quadrant changes](docs/screenshots/market-rotation.png)
 
+**Sector internals.** These panels check whether a rotation is broad or rests on a few names.
+
+- **One row per sector** (the S&P 500 members behind each sector ETF):
+  - the share of members beating SPY over 4 weeks;
+  - the share above their 50- and 200-day averages;
+  - net new 52-week highs;
+  - equal-weighted minus cap-weighted return;
+  - a check of whether participation agrees with the rotation map's direction.
+- **What's driving it:** pick a sector to see each company's contribution to its move vs SPY
+  over 1, 4 or 13 weeks, plus a year of participation history.
+- **Leadership:** a heatmap of every sector's 4-week return vs SPY, week by week, with how
+  spread out and how correlated the sectors are now compared with history.
+- **Cross-asset checks:** each sector against the driver that should move it:
+  - financials vs the yield curve;
+  - energy vs crude oil;
+  - materials vs copper/gold;
+  - utilities and real estate vs the 10-year yield;
+  - cyclicals vs defensives against the high-yield spread.
+
+  The table shows whether the latest moves agree and how strong the link has been, both
+  recently and historically.
+
 **Market map.** An S&P 500 or Nasdaq 100 treemap, sized by market cap and coloured by
 return over the chosen period. Click a sector to zoom in.
 
@@ -424,6 +446,32 @@ On 1999–2026 data:
 
 26-week trend with 4-week momentum was picked for readability: it rotated cleanly without
 the zig-zag of shorter windows.
+
+### Sector internals and cross-asset checks
+
+- **Membership and weights.** Members come from the S&P 500 list, mapped to the sector ETFs
+  by GICS sector. Weights are today's market caps with the share count held fixed, so they
+  approximate each ETF's holdings.
+- **Contributions.** A member's contribution is its weight at the start of the window ×
+  (its return − SPY's return). Within a sector they add up to the members' cap-weighted
+  move vs SPY.
+- **Participation test.** Every 4 weeks, each sector is sorted by the rotation map's
+  momentum (rising or falling) and by participation (50% of members beating SPY). The page
+  shows its return vs the other sectors over the next 4 weeks. The sample is only the five
+  years of member prices, and uses today's members. On real data, ranking sectors by
+  participation had a rank correlation of +0.055 (t 1.3) with the next 4 weeks.
+  Participation didn't confirm falling sectors: the falling ones that still had broad
+  participation did worst.
+- **Cross-asset links.** The link is the correlation of weekly changes since about 1999,
+  signed so that positive means moving the expected way:
+  - oil and energy: +0.58;
+  - the high-yield spread and offense/defense: +0.42;
+  - the 10-year yield with real estate: +0.38, and with utilities: +0.28;
+  - the yield curve and financials: +0.17;
+  - copper/gold and materials: +0.14.
+
+  The page shows the last 52 weeks next to the full history, because these links come
+  and go.
 
 ### Look-alikes
 

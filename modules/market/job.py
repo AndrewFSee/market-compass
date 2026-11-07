@@ -66,7 +66,8 @@ def fetch_inputs(log=print) -> dict:
     spy_long = long[cfg.BENCHMARK] if cfg.BENCHMARK in long else None
     vix_long = long[cfg.VIX] if cfg.VIX in long else None
     log("Fetching rotation-map history...")
-    rotation = sources.download_closes(cfg.rotation_tickers(), cfg.ROTATION_PERIOD, log=log)
+    rotation = sources.download_closes(cfg.rotation_tickers() + cfg.cross_asset_yahoo(), cfg.ROTATION_PERIOD,
+                                       log=log)
     log("Fetching index members...")
     cons = sources.fetch_constituents(log)
     log("Fetching stock prices (this takes a minute or two)...")
@@ -161,6 +162,97 @@ def rotation(daily: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     return path_df, pd.DataFrame(rows), stats
 
 
+def sector_internals(rot: pd.DataFrame, stocks: pd.DataFrame, cons: pd.DataFrame, caps: pd.Series) -> dict:
+    """Participation inside each sector, which members drive its move, and whether broad
+    participation has told you anything about a rotation lasting (config.INTERNALS_*)."""
+    sp = cons[cons["sp500"]].set_index("yf_symbol")
+    sector_of = sp["sector"].map(cfg.GICS_TO_ETF).dropna()
+    sector_of = sector_of[sector_of.index.isin(stocks.columns)]
+    if sector_of.empty or cfg.BENCHMARK not in rot:
+        return {}
+    members, bench = stocks[sector_of.index], rot[cfg.BENCHMARK]
+    part = ind.sector_internals(members, sector_of, bench, caps, cfg.INTERNALS_WINDOW)
+    contrib = pd.concat([ind.contributions(members, sector_of, bench, caps, n).assign(window=label)
+                         for label, n in cfg.CONTRIBUTION_WINDOWS.items()], ignore_index=True)
+    contrib["name"] = contrib["ticker"].map(sp["name"])
+
+    # the test: weekly participation vs the rotation map's momentum and the next weeks' returns
+    etfs = [e for e in cfg.GICS_TO_ETF.values() if e in rot]
+    wk = ind.weekly(rot[[*etfs, cfg.BENCHMARK]])
+    lr = ind.log_ratio(wk[etfs], wk[cfg.BENCHMARK])
+    _, momentum = ind.rotation_axes(lr, cfg.ROTATION_TREND_WEEKS, cfg.ROTATION_MOMENTUM_WEEKS, cfg.ROTATION_Z_WEEKS)
+    h = cfg.ROTATION_HORIZON
+    beating = ind.weekly(part.pivot(index="date", columns="sector", values="beating"))
+    stats = ind.confirmation_stats(beating, momentum, lr.shift(-h) - lr, h, cfg.INTERNALS_BROAD)
+    stats.update(horizon_weeks=h, broad=cfg.INTERNALS_BROAD, window_days=cfg.INTERNALS_WINDOW)
+
+    dates = part["date"].drop_duplicates().sort_values()
+    recent = part[part["date"] >= dates.iloc[-min(len(dates), cfg.INTERNALS_HISTORY_DAYS)]]
+    return {"sector_internals": recent.reset_index(drop=True), "sector_contrib": contrib,
+            "sector_confirmation": stats}
+
+
+def leadership(rot: pd.DataFrame) -> dict:
+    """Weekly leadership heatmap (4-week return vs SPY) and sector dispersion / correlation."""
+    etfs = [e for e in cfg.SECTORS if e in rot]
+    if not etfs or cfg.BENCHMARK not in rot:
+        return {}
+    wk = ind.weekly(rot[[*etfs, cfg.BENCHMARK]])
+    rel = ind.relative_returns(wk[etfs], wk[cfg.BENCHMARK], cfg.ROTATION_MOMENTUM_WEEKS)
+    disp = ind.dispersion(rot[etfs], cfg.ROTATION_MOMENTUM_WEEKS, cfg.DISPERSION_DAYS)
+    return {"sector_leadership": rel.iloc[-cfg.LEADERSHIP_WEEKS:].rename_axis("date"),
+            "sector_dispersion": disp.rename_axis("date")}
+
+
+def _driver(c: dict, wk: pd.DataFrame, fred: dict) -> pd.Series | None:
+    if c["kind"] == "fred":
+        s = fred.get(c["driver"])
+        if s is None or s.dropna().empty:
+            return None
+        return s.dropna().resample("W-FRI").last().reindex(wk.index, method="ffill", limit=2)
+    parts = c["driver"].split("/")
+    if any(p not in wk for p in parts):
+        return None
+    drv = wk[parts[0]] / wk[parts[1]] if len(parts) == 2 else wk[parts[0]]
+    return drv.where(drv > 0)  # a negative futures print can't be compared
+
+
+def cross_asset(rot: pd.DataFrame, fred: dict) -> dict:
+    """Each sector's relative strength against the driver that should move it (config.CROSS_ASSET)."""
+    if cfg.BENCHMARK not in rot:
+        return {}
+    wk = ind.weekly(rot)
+    logs = np.log(wk)
+    rows, hist = [], []
+    for i, c in enumerate(cfg.CROSS_ASSET):
+        if c["sector"] == "OFFENSE":
+            off, dfn = [t for t in cfg.OFFENSE if t in wk], [t for t in cfg.DEFENSE if t in wk]
+            if not off or not dfn:
+                continue
+            rel = (logs[off].diff().mean(axis=1) - logs[dfn].diff().mean(axis=1)).cumsum()
+            name = "Offense / defense"
+        elif c["sector"] in wk:
+            rel, name = logs[c["sector"]] - logs[cfg.BENCHMARK], f"{c['sector']} vs SPY"
+        else:
+            continue
+        drv = _driver(c, wk, fred)
+        if drv is None or drv.dropna().empty:
+            continue
+        check = ind.cross_asset_check(rel, drv, c["kind"], c["sign"], cfg.CROSS_ASSET_WEEKS,
+                                      cfg.CROSS_ASSET_CORR_WEEKS)
+        if not check:
+            continue
+        rows.append({"pair": i, "name": name, "sector": c["sector"], "driver": c["label"], "why": c["why"],
+                     "sign": c["sign"], "kind": c["kind"], **check})
+        h = pd.DataFrame({"rel": rel, "driver": drv}).dropna().iloc[-156:]  # 3 years for the chart
+        h["rel"] = (np.exp(h["rel"] - h["rel"].iloc[0]) - 1) * 100
+        hist.append(h.rename_axis("date").reset_index().assign(pair=i))
+    if not rows:
+        return {}
+    return {"cross_asset": {"weeks": cfg.CROSS_ASSET_WEEKS, "corr_weeks": cfg.CROSS_ASSET_CORR_WEEKS, "pairs": rows},
+            "cross_asset_history": pd.concat(hist, ignore_index=True)}
+
+
 def last_complete_session(etf: pd.DataFrame, stocks: pd.DataFrame, min_coverage: float = 0.9) -> pd.Timestamp:
     """Latest date with a benchmark close and prices for most stocks.
 
@@ -243,8 +335,10 @@ def build(inputs: dict, log=print) -> dict:
     rot = inputs.get("rotation_prices")
     # a ticker the long download missed keeps its PRICE_PERIOD history from the ETF pull
     rot = etf if rot is None or rot.empty else rot.combine_first(etf)
-    rot = rot.loc[:session, [t for t in cfg.rotation_tickers() if t in rot]]
+    rot = rot.loc[:session, [t for t in cfg.rotation_tickers() + cfg.cross_asset_yahoo() if t in rot]]
     rotation_path, rotation_now, rotation_stats = rotation(rot)
+    log("Computing sector internals, leadership and cross-asset checks...")
+    extras = {**sector_internals(rot, stocks, cons, inputs["caps"]), **leadership(rot), **cross_asset(rot, fred)}
 
     log("Computing returns...")
     etf_returns = ind.period_returns(etf.drop(columns=[cfg.VIX], errors="ignore"), cfg.TIMEFRAMES)
@@ -267,7 +361,7 @@ def build(inputs: dict, log=print) -> dict:
     return {"gauges": gauges, "gauge_history": history, "econ_history": econ_history, "long_history": long_history,
             "breadth": breadth, "etf_returns": etf_returns, "constituents_perf": cons_perf,
             "rotation_path": rotation_path, "rotation_now": rotation_now, "rotation_stats": rotation_stats,
-            "meta": meta}
+            **extras, "meta": meta}
 
 
 def save(outputs: dict) -> None:

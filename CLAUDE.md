@@ -62,6 +62,16 @@ scores.
   motion is mostly arithmetic (momentum = change in trend); sectors at relative RSI >= 70
   trailed the group ~0.4% over 4 weeks in both halves (55% hit). The page's expander states
   this from the numbers; keep it that way if the recipe changes.
+- Sector internals / leadership / cross-asset (`job.sector_internals`, `leadership`, `cross_asset`;
+  settings `INTERNALS_*`, `CONTRIBUTION_WINDOWS`, `LEADERSHIP_WEEKS`, `CROSS_ASSET*`): S&P 500 members
+  mapped to sector ETFs by GICS (`GICS_TO_ETF`); weights = today's cap with share count held
+  fixed, so contributions approximate the ETFs' holdings. Participation test covers only the
+  5 years of member prices and today's members (survivorship). Measured 2026-11-07: ranking
+  sectors by % of members beating SPY had IC +0.055 (t 1.3); falling momentum with broad
+  participation did not trail falling + narrow (the opposite). Cross-asset links (signed corr of
+  weekly changes, since ~1999): oil/XLE +0.58, HY spread/offense-defense +0.42, 10Y/XLRE +0.38,
+  10Y/XLU +0.28, curve/XLF +0.17, copper-gold/XLB +0.14. Commodity drivers are Yahoo futures
+  (CL=F, HG=F, GC=F), downloaded with the rotation history.
 
 ## Integrating my other Streamlit projects
 - Quick: add the project's script to `PAGES` with an absolute path and remove its
@@ -144,6 +154,14 @@ Publishers are thin: they call the project's own validated functions, never re-i
 - Technical gauge ranks components against a mostly-bullish 2 years, so ordinary pullbacks
   read BEARISH (e.g. 25 with SPY 5.7% above its 200-day). Consider a longer window.
 - Calibrate gauges against SimpleVisor readings during the trial (log both daily).
+- Free sources checked 2026-11-07 for ETF flows / estimate revisions (not built yet):
+  SSGA daily NAV file per SPDR fund with shares outstanding since 1998
+  (`https://www.ssga.com/us/en/intermediary/library-content/products/fund-data/etfs/us/navhist-us-en-<ticker>.xlsx`;
+  flow ~ change in shares x NAV; needs openpyxl). Yahoo via yfinance `Ticker.eps_trend` (EPS
+  estimate now / 7 / 30 / 60 / 90 days ago) and `eps_revisions` (up/down counts, 7 and 30 days):
+  current snapshot only, so history has to be built by saving it daily. FMP has no fund-flow
+  endpoint; its analyst estimates are current consensus only (Starter: annual, US); Starter also
+  has historical analyst grades (upgrades/downgrades) for US stocks.
 - Possible additions: put/call ratio component, true NYSE A/D data, 52-week high/low
   history panel, sector/factor relative-strength analysis page, alerts when a gauge
   crosses a band.

@@ -11,7 +11,8 @@ from modules.market import config as cfg
 #   kind "pos": multiplicative random walk; "ar": mean-reverting around the level
 _FRED_SHAPES = {
     "D": {"BAMLH0A0HYM2": (4.0, 0.03, "ar"), "BAMLC0A0CM": (1.3, 0.015, "ar"),
-          "DGS2": (3.0, 0.04, "ar"), "DFII10": (1.0, 0.03, "ar"), "RRPONTSYD": (300, 0.03, "pos"),
+          "DGS2": (3.0, 0.04, "ar"), "DGS10": (4.2, 0.03, "ar"), "DFII10": (1.0, 0.03, "ar"),
+          "RRPONTSYD": (300, 0.03, "pos"),
           "DTWEXBGS": (115, 0.003, "pos"), "T10Y3M": (0.8, 0.03, "ar"), "BAA10Y": (2.2, 0.02, "ar")},
     "W": {"WALCL": (7.0e6, 0.004, "pos"), "WTREGEN": (7.5e5, 0.04, "pos"), "WRESBAL": (3200, 0.01, "pos"),
           "NFCI": (-0.4, 0.05, "ar"), "ICSA": (230e3, 0.03, "pos"), "CCSA": (1.8e6, 0.02, "pos")},
@@ -53,12 +54,11 @@ def generate(seed: int = 7) -> dict:
     etf[cfg.VIX] = 17 * np.exp(x)
     etf = pd.DataFrame(etf, index=days)
 
-    sectors = list(cfg.SECTORS.values())
     rows, stocks = [], {}
-    for sector in sectors:
+    for sector, etf_ticker in cfg.GICS_TO_ETF.items():
         sector_factor = rng.normal(0, 0.006, n)
         for i in range(1, 9):
-            sym = f"{sector[:3].upper()}{i}"
+            sym = f"{etf_ticker}{i}"
             rows.append({"symbol": sym, "yf_symbol": sym, "name": f"Demo {sector} {i}", "sector": sector,
                          "sp500": True, "ndx": bool(rng.random() < 0.3)})
             stocks[sym] = 50 * np.exp(np.cumsum(rng.uniform(0.6, 1.4) * market + sector_factor
@@ -80,5 +80,7 @@ def generate(seed: int = 7) -> dict:
     for sid in ("NEWORDER", "ACOGNO", "DGORDER", "TOTALSA", "M2REAL"):
         fred[sid] = fred[sid].iloc[:-1]
 
-    return {"fred": fred, "etf": etf, "rotation_prices": etf[cfg.rotation_tickers()], "constituents": constituents,
+    commodities = pd.DataFrame({t: asset(0.3, 0.02) for t in cfg.cross_asset_yahoo()}, index=days)
+    rotation_prices = etf[cfg.rotation_tickers()].join(commodities)
+    return {"fred": fred, "etf": etf, "rotation_prices": rotation_prices, "constituents": constituents,
             "stocks": stocks, "caps": caps, "missing": [], "demo": True}

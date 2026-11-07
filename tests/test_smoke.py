@@ -547,3 +547,55 @@ def test_rotation_outputs_on_demo(demo_data):
     sectors = stats["groups"]["Sectors"]
     assert len(sectors["candidates"]) == len(cfg.ROTATION_CANDIDATES)
     assert sectors["periods"]["after"]["moves"]
+
+
+def test_sector_internals_and_contributions_math():
+    import numpy as np
+    from modules.market import indicators as ind
+    days = pd.bdate_range("2024-01-01", periods=300)
+    t = np.arange(300)
+    closes = pd.DataFrame({"UP1": 100 * 1.002 ** t, "UP2": 100 * 1.003 ** t, "DOWN": 100 * 0.999 ** t,
+                           "OTHER": 100.0 + 0 * t}, index=days)
+    sector_of = pd.Series({"UP1": "XLA", "UP2": "XLA", "DOWN": "XLA", "OTHER": "XLB"})
+    bench = pd.Series(100 * 1.001 ** t, index=days)
+    caps = pd.Series({"UP1": 300.0, "UP2": 100.0, "DOWN": 600.0, "OTHER": 50.0})
+    part = ind.sector_internals(closes, sector_of, bench, caps, window=20)
+    last = part[part["date"] == days[-1]].set_index("sector")
+    assert last.at["XLA", "beating"] == pytest.approx(200 / 3)  # two of three beat the benchmark
+    assert last.at["XLA", "above_200"] == pytest.approx(200 / 3)
+    assert last.at["XLA", "net_highs"] == pytest.approx(100 / 3)  # two at highs, one at lows
+    c = ind.contributions(closes, sector_of, bench, caps, window=20)
+    xla = c[c["sector"] == "XLA"]
+    assert xla["weight"].sum() == pytest.approx(100)
+    # contributions add up to the cap-weighted sector return minus the benchmark's
+    assert xla["contrib"].sum() == pytest.approx(last.at["XLA", "rel_cw"], rel=1e-6)
+    assert xla.set_index("ticker").at["DOWN", "contrib"] < 0
+
+
+def test_cross_asset_check_signs():
+    import numpy as np
+    from modules.market import indicators as ind
+    weeks = pd.date_range("2020-01-03", periods=200, freq="W-FRI")
+    rng = np.random.default_rng(1)
+    drv = pd.Series(4 + np.cumsum(rng.normal(0, 0.1, 200)), index=weeks)  # a yield, in %
+    rel = -0.05 * drv + pd.Series(rng.normal(0, 0.001, 200), index=weeks).cumsum()  # falls when yields rise
+    out = ind.cross_asset_check(rel, drv, "fred", sign=-1, weeks=13, corr_weeks=52)
+    assert out["corr_all"] > 0.9 and out["corr_recent"] > 0.9  # signed: positive = moves the expected way
+    assert out["agrees"] == (np.sign(out["rel_change"]) == -np.sign(out["driver_change"]))
+    d = ind.dispersion(pd.DataFrame({k: 100 * np.exp(np.cumsum(rng.normal(0, 0.01, 400)))
+                                     for k in "ABCD"}, index=pd.bdate_range("2023-01-02", periods=400)))
+    assert d["correlation"].dropna().abs().lt(0.5).all() and (d["dispersion"].dropna() > 0).all()
+
+
+def test_sector_extras_on_demo(demo_data):
+    from core import store
+    from modules.market import config as cfg
+    internals = store.load_frame("market", "sector_internals")
+    assert set(internals["sector"]) == set(cfg.GICS_TO_ETF.values())
+    assert internals[["beating", "above_50", "above_200"]].dropna().stack().between(0, 100).all()
+    contrib = store.load_frame("market", "sector_contrib")
+    assert set(contrib["window"]) == set(cfg.CONTRIBUTION_WINDOWS)
+    assert set(store.load_json("market", "sector_confirmation")) >= {"rising_broad", "falling_narrow", "ic_beating"}
+    assert store.load_frame("market", "sector_leadership").shape == (cfg.LEADERSHIP_WEEKS, len(cfg.SECTORS))
+    pairs = store.load_json("market", "cross_asset")["pairs"]
+    assert {p["sector"] for p in pairs} == {c["sector"] for c in cfg.CROSS_ASSET}

@@ -105,6 +105,49 @@ ROTATION_CANDIDATES = {  # kind: trend | trend_change | return | rsi
 }
 
 
+# ---------------------------------------------------------------- sector internals
+# S&P 500 members (GICS sector from Wikipedia) behind each sector ETF.
+GICS_TO_ETF = {
+    "Information Technology": "XLK", "Health Care": "XLV", "Financials": "XLF",
+    "Consumer Discretionary": "XLY", "Consumer Staples": "XLP", "Energy": "XLE", "Industrials": "XLI",
+    "Materials": "XLB", "Utilities": "XLU", "Real Estate": "XLRE", "Communication Services": "XLC",
+}
+INTERNALS_WINDOW = 20  # trading days (~4 weeks) for "beating SPY" and the EW - CW spread
+INTERNALS_BROAD = 50   # % of members beating SPY that counts as broad participation
+CONTRIBUTION_WINDOWS = {"1 wk": 5, "4 wk": 20, "13 wk": 63}  # drill-down periods, trading days
+INTERNALS_HISTORY_DAYS = 252  # participation history kept for the page
+
+# ---------------------------------------------------------------- leadership & cross-asset
+LEADERSHIP_WEEKS = 52  # heatmap length
+DISPERSION_DAYS = 63   # trailing window for average pairwise correlation of sector returns
+# Driver checks: does each sector's relative strength move with what should drive it?
+#   driver: a Yahoo ticker, a FRED series id, or "a/b" for a ratio of two Yahoo tickers
+#   sign: +1 if the sector should outperform when the driver rises, -1 if when it falls
+CROSS_ASSET = [
+    {"sector": "XLF", "driver": "T10Y3M", "label": "Yield curve (10Y - 3M)", "sign": 1, "kind": "fred",
+     "why": "banks lend long and borrow short"},
+    {"sector": "XLE", "driver": "CL=F", "label": "Crude oil", "sign": 1, "kind": "yahoo",
+     "why": "energy earnings follow oil"},
+    {"sector": "XLB", "driver": "HG=F/GC=F", "label": "Copper / gold", "sign": 1, "kind": "yahoo",
+     "why": "industrial demand vs safety"},
+    {"sector": "XLU", "driver": "DGS10", "label": "10Y Treasury yield", "sign": -1, "kind": "fred",
+     "why": "bond proxy: higher yields compete"},
+    {"sector": "XLRE", "driver": "DGS10", "label": "10Y Treasury yield", "sign": -1, "kind": "fred",
+     "why": "financing costs and cap rates"},
+    {"sector": "OFFENSE", "driver": "BAMLH0A0HYM2", "label": "High-yield spread", "sign": -1, "kind": "fred",
+     "why": "risk appetite: tighter spreads favour cyclicals"},
+]
+# Offense = cyclical sectors vs defensive ones, equal-weighted
+OFFENSE = ["XLK", "XLY", "XLC", "XLI", "XLF", "XLB"]
+DEFENSE = ["XLP", "XLU", "XLV"]
+CROSS_ASSET_WEEKS = 13  # change measured over this many weeks
+CROSS_ASSET_CORR_WEEKS = 52  # rolling correlation of weekly changes
+
+
+def cross_asset_yahoo() -> list[str]:
+    return list(dict.fromkeys(t for c in CROSS_ASSET if c["kind"] == "yahoo" for t in c["driver"].split("/")))
+
+
 def rotation_tickers() -> list[str]:
     return list(dict.fromkeys([BENCHMARK, *(t for g in ROTATION_GROUPS.values() for t in g)]))
 
@@ -173,6 +216,7 @@ def all_fred_ids() -> list[str]:
     ids = [HY_OAS, IG_OAS, GDP_SERIES, *NETLIQ_PARTS]
     ids += [f["series"] for f in LIQUIDITY_FACTORS if f["series"] != "NETLIQ"]
     ids += [e["id"] for e in ECON_INDICATORS]
+    ids += [c["driver"] for c in CROSS_ASSET if c["kind"] == "fred"]
     return list(dict.fromkeys(ids))
 
 

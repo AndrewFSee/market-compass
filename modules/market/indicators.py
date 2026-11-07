@@ -440,6 +440,168 @@ def rotation_stats(x: pd.DataFrame, y: pd.DataFrame, rel_rsi: pd.DataFrame, fwd:
     return {"quadrants": quads, "moves": moves, **extremes}
 
 
+# ----------------------------------------------------------------- sector internals
+def _cap_weights_basis(closes: pd.DataFrame, caps: pd.Series) -> pd.DataFrame:
+    """Market cap through time, holding today's share count fixed (caps / last price)."""
+    last = closes.ffill().iloc[-1]
+    shares = caps.reindex(closes.columns).fillna(caps.median()) / last
+    return closes * shares
+
+
+def sector_internals(closes: pd.DataFrame, sector_of: pd.Series, bench: pd.Series, caps: pd.Series,
+                     window: int = 20) -> pd.DataFrame:
+    """Daily participation inside each sector, long format (date, sector, ...):
+    beating   - % of members whose `window`-day return beat the benchmark's
+    above_50 / above_200 - % of members above their 50- / 200-day average
+    net_highs - % of members that made a new 52-week high within `window` days, minus lows
+    ew_cw     - equal-weighted minus cap-weighted `window`-day return, in % points
+    rel_cw    - cap-weighted `window`-day return minus the benchmark's, in % points"""
+    closes = closes.sort_index()
+    bench = bench.reindex(closes.index).ffill()
+    ret = closes / closes.shift(window) - 1
+    bret = bench / bench.shift(window) - 1
+    beat = ret.gt(bret, axis=0).astype(float).where(ret.notna()).where(bret.notna(), axis=0)
+    flags = {}
+    for n in (50, 200):
+        sma = closes.rolling(n, min_periods=n).mean()
+        flags[f"above_{n}"] = (closes > sma).astype(float).where(sma.notna() & closes.notna())
+    hi = closes.rolling(252, min_periods=200).max()
+    lo = closes.rolling(252, min_periods=200).min()
+    valid = hi.notna() & closes.notna()
+    made_high = (closes >= hi).where(valid).astype(float).rolling(window, min_periods=1).max()
+    made_low = (closes <= lo).where(valid).astype(float).rolling(window, min_periods=1).max()
+    net = (made_high - made_low).where(valid)
+    w0 = _cap_weights_basis(closes, caps).shift(window).where(ret.notna())
+    out = []
+    for sector, members in sector_of.groupby(sector_of):
+        cols = [c for c in members.index if c in closes.columns]
+        if not cols:
+            continue
+        cw = (ret[cols] * w0[cols]).sum(axis=1, min_count=1) / w0[cols].sum(axis=1, min_count=1)
+        out.append(pd.DataFrame({
+            "sector": sector,
+            "beating": beat[cols].mean(axis=1) * 100,
+            "above_50": flags["above_50"][cols].mean(axis=1) * 100,
+            "above_200": flags["above_200"][cols].mean(axis=1) * 100,
+            "net_highs": net[cols].mean(axis=1) * 100,
+            "ew_cw": (ret[cols].mean(axis=1) - cw) * 100,
+            "rel_cw": (cw - bret) * 100,
+            "members": ret[cols].notna().sum(axis=1),
+        }))
+    if not out:
+        return pd.DataFrame(columns=["date", "sector", "beating", "above_50", "above_200", "net_highs",
+                                     "ew_cw", "rel_cw", "members"])
+    return pd.concat(out).rename_axis("date").reset_index()
+
+
+def contributions(closes: pd.DataFrame, sector_of: pd.Series, bench: pd.Series, caps: pd.Series,
+                  window: int) -> pd.DataFrame:
+    """Each member's share of its sector's cap-weighted move vs the benchmark over the last
+    `window` days, in % points: weight at the start x (return - benchmark return).
+    Contributions within a sector add up to the sector's relative return."""
+    closes = closes.sort_index().ffill()
+    if len(closes) <= window:
+        return pd.DataFrame(columns=["sector", "ticker", "weight", "ret", "rel", "contrib"])
+    bench = bench.reindex(closes.index).ffill()
+    start, end = closes.iloc[-1 - window], closes.iloc[-1]
+    r = end / start - 1
+    b = bench.iloc[-1] / bench.iloc[-1 - window] - 1
+    cap0 = _cap_weights_basis(closes, caps).iloc[-1 - window]
+    rows = []
+    for sector, members in sector_of.groupby(sector_of):
+        cols = [c for c in members.index if c in closes.columns and pd.notna(r.get(c)) and pd.notna(cap0.get(c))]
+        if not cols:
+            continue
+        w = cap0[cols] / cap0[cols].sum()
+        rows.append(pd.DataFrame({"sector": sector, "ticker": cols, "weight": w.to_numpy() * 100,
+                                  "ret": r[cols].to_numpy() * 100, "rel": (r[cols] - b).to_numpy() * 100,
+                                  "contrib": (w * (r[cols] - b)).to_numpy() * 100}))
+    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(
+        columns=["sector", "ticker", "weight", "ret", "rel", "contrib"])
+
+
+def confirmation_stats(beating: pd.DataFrame, momentum: pd.DataFrame, fwd: pd.DataFrame, step: int,
+                       broad: float) -> dict:
+    """Did participation inside a sector tell you whether its rotation would last?
+
+    beating: % of members beating the benchmark; momentum: the rotation map's momentum;
+    fwd: forward log return vs the benchmark (measured here vs the sectors' average).
+    All weekly, columns = sector ETFs, sampled every `step` rows (non-overlapping)."""
+    cols = [c for c in beating.columns if c in momentum.columns and c in fwd.columns]
+    idx = beating.index.intersection(momentum.index).intersection(fwd.index)
+    b, m, f = beating.loc[idx, cols], momentum.loc[idx, cols], fwd.loc[idx, cols]
+    f = f.sub(f.mean(axis=1), axis=0)
+    bs, ms, fs = b.iloc[::step].to_numpy(), m.iloc[::step].to_numpy(), f.iloc[::step].to_numpy()
+    ok = ~(np.isnan(bs) | np.isnan(ms) | np.isnan(fs))
+    cases = {
+        "rising_broad": (ms > 0) & (bs >= broad), "rising_narrow": (ms > 0) & (bs < broad),
+        "falling_broad": (ms <= 0) & (bs < broad), "falling_narrow": (ms <= 0) & (bs >= broad),
+    }
+    out = {}
+    for k, mask in cases.items():
+        v = fs[mask & ok]
+        out[k] = {"mean": float(v.mean()) if len(v) else None, "hit": float((v > 0).mean()) if len(v) else None,
+                  "n": int(len(v))}
+    out["ic_beating"] = ic_summary(cross_ic(b, f, step, min_names=5))
+    have = b.dropna(how="all").index
+    out["start"] = have[0].strftime("%Y-%m-%d") if len(have) else None
+    out["end"] = have[-1].strftime("%Y-%m-%d") if len(have) else None
+    return out
+
+
+# ----------------------------------------------------------------- leadership
+def relative_returns(weekly_prices: pd.DataFrame, bench: pd.Series, weeks: int) -> pd.DataFrame:
+    """Trailing `weeks` return of each column minus the benchmark's, in % points (log-based)."""
+    lr = log_ratio(weekly_prices, bench)
+    return (np.exp(lr.diff(weeks)) - 1) * 100
+
+
+def dispersion(daily: pd.DataFrame, weeks: int = 4, corr_days: int = 63) -> pd.DataFrame:
+    """Weekly: spread of the columns' trailing `weeks` returns (cross-sectional std, % points)
+    and their average pairwise correlation of daily returns over the last `corr_days`."""
+    wk = weekly(daily)
+    disp = ((wk / wk.shift(weeks) - 1) * 100).std(axis=1)
+    rets = daily.pct_change(fill_method=None)
+    corr = {}
+    for d in wk.index:
+        window = rets.loc[:d].iloc[-corr_days:].dropna(axis=1, thresh=int(corr_days * 0.8))
+        if window.shape[1] < 3 or len(window) < corr_days:
+            continue
+        c = window.corr().to_numpy()
+        corr[d] = float(c[~np.eye(len(c), dtype=bool)].mean())
+    return pd.DataFrame({"dispersion": disp, "correlation": pd.Series(corr, dtype=float)}).dropna(how="all")
+
+
+# ----------------------------------------------------------------- cross-asset
+def driver_change(s: pd.Series, weeks: int, kind: str) -> pd.Series:
+    """Change over `weeks` rows: % change for prices (yahoo), level change for rates/spreads (fred)."""
+    return (s / s.shift(weeks) - 1) * 100 if kind == "yahoo" else s.diff(weeks)
+
+
+def cross_asset_check(rel: pd.Series, driver: pd.Series, kind: str, sign: int, weeks: int,
+                      corr_weeks: int) -> dict:
+    """Does a sector's relative strength (weekly log ratio vs the benchmark) move with its driver?
+
+    Recent: both changes over `weeks` and whether they agree with the expected sign.
+    Link: correlation of weekly changes over the last `corr_weeks`, and over the whole history,
+    signed so that positive = moving the expected way."""
+    df = pd.DataFrame({"rel": rel, "drv": driver}).dropna()
+    if len(df) <= weeks:
+        return {}
+    rel_chg = (np.exp(df["rel"].diff(weeks)) - 1) * 100
+    drv_chg = driver_change(df["drv"], weeks, kind)
+    weekly_chg = pd.DataFrame({"rel": df["rel"].diff(), "drv": driver_change(df["drv"], 1, kind)}).dropna()
+    recent = weekly_chg.iloc[-corr_weeks:]
+    r_now, d_now = float(rel_chg.iloc[-1]), float(drv_chg.iloc[-1])
+    return {
+        "rel_change": r_now, "driver_change": d_now,
+        "agrees": bool(np.sign(r_now) == sign * np.sign(d_now)) if r_now and d_now else None,
+        "corr_recent": float(recent["rel"].corr(recent["drv"]) * sign) if len(recent) > 10 else None,
+        "corr_all": float(weekly_chg["rel"].corr(weekly_chg["drv"]) * sign) if len(weekly_chg) > 10 else None,
+        "since": df.index[0].strftime("%Y-%m-%d"),
+    }
+
+
 # ----------------------------------------------------------------- returns
 def period_returns(closes: pd.DataFrame, timeframes: list[str]) -> pd.DataFrame:
     """% return for each column over each timeframe, measured to its latest close."""

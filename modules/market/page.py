@@ -470,6 +470,222 @@ with st.container(border=True):
             with st.expander("Does the map predict anything? Tested on the full history"):
                 rotation_evidence(rot_stats, rgroup)
 
+# ================================================================= sector internals
+SECTOR_NAMES = dict(cfg.SECTORS)
+
+
+def participation_check(momentum, beating) -> str:
+    """Does participation inside the sector agree with where the map says it's heading?"""
+    if momentum is None or beating is None or pd.isna(momentum) or pd.isna(beating):
+        return ""
+    broad = beating >= cfg.INTERNALS_BROAD if momentum > 0 else beating < cfg.INTERNALS_BROAD
+    return "Confirms" if broad else "Narrow"
+
+
+def contrib_chart(c: pd.DataFrame, n: int = 8) -> go.Figure:
+    c = c.sort_values("contrib")
+    show = pd.concat([c.head(n), c.tail(n)]).drop_duplicates("ticker") if len(c) > 2 * n else c
+    fig = go.Figure(go.Bar(
+        x=show["contrib"], y=show["ticker"], orientation="h",
+        marker_color=[ui.PALETTE["teal"] if v >= 0 else ui.PALETTE["red"] for v in show["contrib"]],
+        customdata=show[["name", "weight", "ret", "rel"]].to_numpy(),
+        hovertemplate="<b>%{y}</b> · %{customdata[0]}<br>Contribution %{x:+.2f} pts<br>"
+                      "Weight %{customdata[1]:.1f}% · return %{customdata[2]:+.1f}% "
+                      "(%{customdata[3]:+.1f} vs SPY)<extra></extra>",
+    ))
+    fig.update_layout(height=max(260, 22 * len(show) + 40), margin={"l": 0, "r": 0, "t": 10, "b": 0},
+                      xaxis={"title": "Contribution to the sector's move vs SPY (% points)", "zeroline": True},
+                      yaxis={"automargin": True})
+    return fig
+
+
+def confirmation_evidence(s: dict) -> None:
+    h = s["horizon_weeks"]
+    st.markdown(f"Each week from {s['start'][:7]} to {s['end'][:7]}, every sector was sorted by the rotation map's "
+                f"momentum (rising or falling) and by participation ({s['broad']}% of members beating SPY over "
+                f"{s['window_days']} days). How did it do over the next {h} weeks against the other sectors?")
+    labels = {"rising_broad": ("Rising", "Broad (confirms)"), "rising_narrow": ("Rising", "Narrow"),
+              "falling_broad": ("Falling", "Broad (confirms)"), "falling_narrow": ("Falling", "Narrow")}
+    rows = [{"Momentum": a, "Participation": b, f"Next {h} wks vs sectors": _pct(s[k]["mean"]),
+             "Beat the sectors": _pct(s[k]["hit"]), "Readings": s[k]["n"]} for k, (a, b) in labels.items()]
+    num = st.column_config.NumberColumn
+    ui.table(pd.DataFrame(rows), hide_index=True, column_config={
+        f"Next {h} wks vs sectors": num(format="%+.2f%%"),
+        "Beat the sectors": num(format="%.0f%%")})
+    ic = s["ic_beating"]
+    if ic["ic"] is not None:
+        st.markdown(f"Ranking sectors by participation alone: rank correlation with the next {h} weeks "
+                    f"{ic['ic']:+.3f} (t {ic['t']:+.1f}, {ic['n']} periods).")
+    st.caption("If participation confirmed rotations, rising + broad would beat rising + narrow, and falling + broad "
+               "would trail falling + narrow. Caveats: only five years of member prices; today's S&P 500 members "
+               "(companies that left the index are missing); weights are approximated from today's market caps.")
+
+
+st.markdown("##### Sector internals")
+internals, contrib, confirm = load("sector_internals"), load("sector_contrib"), load("sector_confirmation", "json")
+with st.container(border=True):
+    if internals is None or internals.empty or contrib is None:
+        st.info("No sector internals yet. Run `python run_jobs.py`.")
+    else:
+        last = internals[internals["date"] == internals["date"].max()].set_index("sector")
+        sec_now = (rot_now[rot_now["group"] == "Sectors"].set_index("ticker")
+                   if rot_now is not None and not rot_now.empty else pd.DataFrame())
+        order = [t for t in (sec_now.sort_values("angle").index if len(sec_now) else last.index) if t in last.index]
+        table = pd.DataFrame({
+            "Sector": order, "Name": [SECTOR_NAMES.get(t, t) for t in order],
+            "Quadrant": [sec_now["quadrant"].get(t, "") if len(sec_now) else "" for t in order],
+            "Beating SPY": last.loc[order, "beating"].to_numpy(),
+            "Above 50-day": last.loc[order, "above_50"].to_numpy(),
+            "Above 200-day": last.loc[order, "above_200"].to_numpy(),
+            "Net new highs": last.loc[order, "net_highs"].to_numpy(),
+            "EW − CW": last.loc[order, "ew_cw"].to_numpy(),
+            "Check": [participation_check(sec_now["y"].get(t) if len(sec_now) else None, last.at[t, "beating"])
+                      for t in order],
+        })
+        num, prog = st.column_config.NumberColumn, st.column_config.ProgressColumn
+        w = cfg.INTERNALS_WINDOW
+        ui.table(table, hide_index=True, height=35 * (len(table) + 1) + 3, column_config={
+            "Beating SPY": prog(format="%.0f%%", min_value=0, max_value=100, color=ui.PALETTE["grey"],
+                                help=f"Share of the sector's S&P 500 members that beat SPY over {w} trading days"),
+            "Above 50-day": num(format="%.0f%%"), "Above 200-day": num(format="%.0f%%"),
+            "Net new highs": num(format="%+.0f%%", help=f"Members that made a new 52-week high in the last {w} days "
+                                                          "minus those that made a new low, as % of members"),
+            "EW − CW": num(format="%+.1f", help=f"Equal-weighted minus cap-weighted {w}-day return, % points. "
+                                                "Positive = the average member did better than the giants."),
+            "Check": st.column_config.TextColumn(
+                help=f"Confirms: rising momentum with ≥ {cfg.INTERNALS_BROAD}% of members beating SPY, or falling "
+                     f"momentum with fewer. Narrow: the move rests on a few names."),
+        })
+
+        st.markdown("**What's driving it**")
+        c1, c2 = st.columns([1.4, 1], vertical_alignment="center")
+        with c1:
+            pick = st.selectbox("Sector", order, format_func=lambda t: f"{t} · {SECTOR_NAMES.get(t, t)}",
+                                key="internals_sector", label_visibility="collapsed")
+        with c2:
+            win = ui.choice("Window", list(cfg.CONTRIBUTION_WINDOWS), key="internals_window", default="4 wk")
+        c = contrib[(contrib["sector"] == pick) & (contrib["window"] == win)]
+        if c.empty:
+            st.info("No member data for this sector.")
+        else:
+            total = c["contrib"].sum()
+            lead = c.sort_values("contrib", ascending=total < 0).head(3)
+            m1, m2, m3 = st.columns(3)
+            m1.metric(f"{pick} members vs SPY, cap-weighted", f"{total:+.2f} pts")
+            m2.metric("From the top 3 names", f"{lead['contrib'].sum():+.2f} pts", ", ".join(lead["ticker"]),
+                      delta_color="off", delta_arrow="off")
+            m3.metric("Members beating SPY", f"{(c['rel'] > 0).mean():.0%}", f"{len(c)} members", delta_color="off",
+                      delta_arrow="off")
+            left, right = st.columns([1.3, 1])
+            with left:
+                ui.chart(contrib_chart(c), key="contrib_chart")
+            with right:
+                hist = internals[internals["sector"] == pick]
+                fig = go.Figure(go.Scatter(x=hist["date"], y=hist["beating"], mode="lines", line={"width": 1.6},
+                                           hovertemplate="%{x|%b %d}: %{y:.0f}%<extra></extra>"))
+                fig.add_hline(y=cfg.INTERNALS_BROAD, line_dash="dot", line_color=ui.PALETTE["grey"])
+                fig.update_layout(height=260, margin={"l": 0, "r": 0, "t": 26, "b": 0}, yaxis={"range": [0, 100]},
+                                  title={"text": f"{pick} members beating SPY over {w} days, 1 year",
+                                         "font": {"size": 13}})
+                ui.chart(fig, key="participation_hist")
+            st.caption(f"Contribution = weight at the start × (return − SPY's return); they add up to the members' "
+                       f"cap-weighted move vs SPY. Weights come from today's market caps, so they approximate "
+                       f"{pick}'s actual holdings. As of {internals['date'].max():%b %d, %Y}.")
+        if confirm:
+            with st.expander("Does participation confirm a rotation? Tested on five years"):
+                confirmation_evidence(confirm)
+
+# ================================================================= leadership
+st.markdown("##### Sector leadership")
+lead_df, disp = load("sector_leadership"), load("sector_dispersion")
+with st.container(border=True):
+    if lead_df is None or lead_df.empty:
+        st.info("No leadership data yet. Run `python run_jobs.py`.")
+    else:
+        latest = lead_df.iloc[-1].sort_values(ascending=False)
+        z = lead_df[latest.index].T
+        ranks = lead_df[latest.index].rank(axis=1, ascending=False).T
+        lim = float(np.nanpercentile(np.abs(z.to_numpy()), 95)) or 1.0
+        fig = go.Figure(go.Heatmap(
+            z=z.to_numpy(), x=z.columns, y=[f"{t} {SECTOR_NAMES.get(t, '')}" for t in z.index],
+            zmin=-lim, zmax=lim, zmid=0, customdata=ranks.to_numpy(),
+            colorscale=[(0, ui.PALETTE["red"]), (0.5, "#5C6670"), (1, ui.PALETTE["teal"])],
+            colorbar={"title": "% vs SPY", "thickness": 10}, xgap=1, ygap=1,
+            hovertemplate="<b>%{y}</b><br>4 weeks to %{x|%b %d, %Y}: %{z:+.1f}% vs SPY<br>"
+                          "Rank %{customdata:.0f} of " + str(len(z)) + "<extra></extra>",
+        ))
+        fig.update_layout(height=40 + 26 * len(z), margin={"l": 0, "r": 0, "t": 10, "b": 0},
+                          yaxis={"autorange": "reversed"})
+        ui.chart(fig, key="leadership")
+        st.caption(f"Each cell: the sector's {cfg.ROTATION_MOMENTUM_WEEKS}-week return minus SPY's, week by week. "
+                   "Sorted by the latest week. Long runs of one colour = persistent leadership; colour flips across "
+                   "many rows at once = a rotation.")
+        if disp is not None and not disp.empty:
+            recent = disp[disp.index >= disp.index[-1] - pd.DateOffset(years=5)]
+            a, b = st.columns(2)
+            for col, key, title, fmt in ((a, "dispersion", "Dispersion: spread of 4-week sector returns", "%{y:.1f} pts"),
+                                         (b, "correlation", f"Average correlation between sectors, "
+                                                            f"{cfg.DISPERSION_DAYS} days", "%{y:.2f}")):
+                s = disp[key].dropna()
+                if s.empty:
+                    continue
+                pct = (s < s.iloc[-1]).mean() * 100
+                fig = go.Figure(go.Scatter(x=recent.index, y=recent[key], mode="lines", line={"width": 1.6},
+                                           hovertemplate="%{x|%b %d, %Y}: " + fmt + "<extra></extra>"))
+                fig.update_layout(height=210, margin={"l": 0, "r": 0, "t": 26, "b": 0},
+                                  title={"text": title, "font": {"size": 13}})
+                with col:
+                    ui.chart(fig, key=f"disp_{key}")
+                    st.caption(f"Now {s.iloc[-1]:.2f}: higher than {pct:.0f}% of weeks since {s.index[0]:%Y}.")
+            st.caption("High dispersion with low correlation = sectors going their own way, when rotation matters "
+                       "most. Low dispersion with high correlation = everything moves together with the market.")
+
+# ================================================================= cross-asset
+st.markdown("##### Cross-asset checks")
+xa, xa_hist = load("cross_asset", "json"), load("cross_asset_history")
+with st.container(border=True):
+    if not xa or xa_hist is None:
+        st.info("No cross-asset data yet. Run `python run_jobs.py`.")
+    else:
+        wks, cw = xa["weeks"], xa["corr_weeks"]
+
+        def _chg(p):
+            return f"{p['driver_change']:+.1f}%" if p["kind"] == "yahoo" else f"{p['driver_change']:+.2f} pts"
+
+        table = pd.DataFrame([{
+            "Sector": p["name"], "Driver": p["driver"],
+            "Expected": "moves with it" if p["sign"] > 0 else "moves against it",
+            f"Sector, {wks} wks": p["rel_change"], f"Driver, {wks} wks": _chg(p),
+            "Agrees": "Yes" if p["agrees"] else "No" if p["agrees"] is not None else "",
+            f"Link, last {cw} wks": p["corr_recent"], "Link, full history": p["corr_all"],
+        } for p in xa["pairs"]])
+        num = st.column_config.NumberColumn
+        ui.table(table, hide_index=True, column_config={
+            f"Sector, {wks} wks": num(format="%+.1f%%", help="Relative return vs SPY (offense/defense: cyclicals "
+                                                             "minus defensives)"),
+            f"Link, last {cw} wks": num(format="%+.2f", help="Correlation of weekly changes, signed so that "
+                                                            "positive = moving the expected way"),
+            "Link, full history": num(format="%+.2f", help="The same, since both series exist (1999-2000 for most, "
+                                                          "2015 for XLRE)"),
+        })
+        names = {p["pair"]: f"{p['name']} · {p['driver']}" for p in xa["pairs"]}
+        pick = st.selectbox("Pair", list(names), format_func=names.get, key="xa_pair", label_visibility="collapsed")
+        h = xa_hist[xa_hist["pair"] == pick]
+        p = next(p for p in xa["pairs"] if p["pair"] == pick)
+        st.caption(f"Why: {p['why']}. Link since {p['since'][:4]}: {p['corr_all']:+.2f}; "
+                   f"last {cw} weeks: {p['corr_recent']:+.2f}.")
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08,
+                            subplot_titles=(f"{p['name']}, % since {h['date'].iloc[0]:%b %Y}", p["driver"]))
+        fig.add_trace(go.Scatter(x=h["date"], y=h["rel"], mode="lines", line={"width": 1.6}, name=p["name"],
+                                 hovertemplate="%{x|%b %d, %Y}: %{y:+.1f}%<extra></extra>"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=h["date"], y=h["driver"], mode="lines", line={"width": 1.6, "color":
+                                 ui.PALETTE["grey"]}, name=p["driver"],
+                                 hovertemplate="%{x|%b %d, %Y}: %{y:.2f}<extra></extra>"), row=2, col=1)
+        fig.update_layout(height=420, margin={"l": 0, "r": 0, "t": 30, "b": 0}, showlegend=False)
+        ui.chart(fig, key="cross_asset_chart")
+        st.caption("A rotation is more believable when the driver behind it agrees, but check the link columns "
+                   "first: a textbook relationship that has been near zero for a year isn't confirming anything.")
+
 # ================================================================= treemap
 st.subheader("Market map")
 cons = load("constituents_perf")
