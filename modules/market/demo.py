@@ -82,5 +82,11 @@ def generate(seed: int = 7) -> dict:
 
     commodities = pd.DataFrame({t: asset(0.3, 0.02) for t in cfg.cross_asset_yahoo()}, index=days)
     rotation_prices = etf[cfg.rotation_tickers()].join(commodities)
-    return {"fred": fred, "etf": etf, "rotation_prices": rotation_prices, "constituents": constituents,
+    ssga = []
+    for t in cfg.FLOW_TICKERS:  # shares outstanding drift with creations and redemptions
+        shares = 2e8 * np.exp(np.cumsum(rng.normal(0, 0.004, n)))
+        ssga.append(pd.DataFrame({"date": days, "ticker": t, "nav": etf[t].to_numpy(), "shares": shares,
+                                  "tna": shares * etf[t].to_numpy()}))
+    return {"fred": fred, "etf": etf, "rotation_prices": rotation_prices, "ssga": pd.concat(ssga, ignore_index=True),
+            "constituents": constituents,
             "stocks": stocks, "caps": caps, "missing": [], "demo": True}

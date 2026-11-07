@@ -72,6 +72,12 @@ scores.
   weekly changes, since ~1999): oil/XLE +0.58, HY spread/offense-defense +0.42, 10Y/XLRE +0.38,
   10Y/XLU +0.28, curve/XLF +0.17, copper-gold/XLB +0.14. Commodity drivers are Yahoo futures
   (CL=F, HG=F, GC=F), downloaded with the rotation history.
+- Fund flows (`job.fund_flows`, `FLOW_*`): State Street NAV-history xlsx per sector SPDR (needs
+  openpyxl), since 2003-12. Flow = change in shares x NAV; splits (Dec 2025 2-for-1s), each
+  fund's first 63 days and days moving >50% of assets (XLRE's 2016 spin-off) are excluded;
+  signals lag one day. Measured 2026-11-07: no predictive link in either half.
+- `core.store` retries `os.replace` on PermissionError: on Windows a reader (the running hub)
+  briefly blocks replacing a file, which once failed a market run.
 
 ## Integrating my other Streamlit projects
 - Quick: add the project's script to `PAGES` with an absolute path and remove its
@@ -110,6 +116,14 @@ Publishers are thin: they call the project's own validated functions, never re-i
   mixed log and simple returns; parametric stress scenarios were never applied. It now has
   `tailrisk stress` and `tailrisk validate` (walk-forward of the full 21-day engine). Results
   move ~0.2 pts run to run because Yahoo's adjusted prices differ slightly per download.
+- **revisions** (TickerLake) -> `data/revisions/`: sector_revisions, revisions_history,
+  revisions_names, summary.json. TickerLake's `analyst` stage (yfinance, no key) snapshots every
+  member's EPS consensus daily into `analyst_estimates` and keeps broker rating changes since
+  ~2012 in `analyst_ratings` (`tickerlake backfill analyst` for all past members). The publisher
+  reads the lake only. The stage runs right after ohlcv in TickerLake-Daily (17:30) so the 18:15
+  hub refresh gets the same day's snapshot. Rating changes were backtested there
+  (`scripts/backtest_analyst_ratings.py`, 2026-11-07): the move happens before the next open;
+  drift after it doesn't beat costs.
 - Projects are found next to the hub (`registry.project()`: `<name>` or `<name>/<name>`; override
   with `HUB_PROJECTS_DIR`). A job whose project or venv is missing is skipped, not failed.
 - Tests here use synthetic data in each publisher's schema; if a publisher's output changes,
@@ -154,14 +168,9 @@ Publishers are thin: they call the project's own validated functions, never re-i
 - Technical gauge ranks components against a mostly-bullish 2 years, so ordinary pullbacks
   read BEARISH (e.g. 25 with SPY 5.7% above its 200-day). Consider a longer window.
 - Calibrate gauges against SimpleVisor readings during the trial (log both daily).
-- Free sources checked 2026-11-07 for ETF flows / estimate revisions (not built yet):
-  SSGA daily NAV file per SPDR fund with shares outstanding since 1998
-  (`https://www.ssga.com/us/en/intermediary/library-content/products/fund-data/etfs/us/navhist-us-en-<ticker>.xlsx`;
-  flow ~ change in shares x NAV; needs openpyxl). Yahoo via yfinance `Ticker.eps_trend` (EPS
-  estimate now / 7 / 30 / 60 / 90 days ago) and `eps_revisions` (up/down counts, 7 and 30 days):
-  current snapshot only, so history has to be built by saving it daily. FMP has no fund-flow
-  endpoint; its analyst estimates are current consensus only (Starter: annual, US); Starter also
-  has historical analyst grades (upgrades/downgrades) for US stocks.
+- FMP (checked 2026-11-07): no fund-flow endpoint; analyst estimates are current consensus only
+  (Starter: annual, US); Starter has historical analyst grades for US stocks, which Yahoo also
+  serves free (TickerLake `analyst_ratings`), so there is nothing to backtest before buying.
 - Possible additions: put/call ratio component, true NYSE A/D data, 52-week high/low
   history panel, sector/factor relative-strength analysis page, alerts when a gauge
   crosses a band.

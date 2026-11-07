@@ -46,6 +46,7 @@ CREDIT = project("credit-spread-analyzer")
 MACRO = project("macro-regime-nowcaster")
 VOL = project("stochastic-vol-surface")
 TAILRISK = project("tail-risk-scenario-engine")
+TICKERLAKE = project("TickerLake")
 
 PAGES = {
     "Hub": [
@@ -92,5 +93,7 @@ JOBS = {
     "vol": {"cmd": [venv_python(VOL), "scripts/publish_to_hub.py"], "cwd": str(VOL)},
     "tailrisk": {"cmd": [venv_python(TAILRISK), "scripts/publish_to_hub.py"],
                  "cwd": str(TAILRISK)},
+    # sector EPS revisions and analyst actions from the lake (TickerLake's daily analyst stage fetches)
+    "revisions": {"cmd": [venv_python(TICKERLAKE), "scripts/publish_to_hub.py"], "cwd": str(TICKERLAKE)},
     "analyst": "modules.analyst.job:run",  # last: reads everything the others published
 }

@@ -179,6 +179,35 @@ def download_closes(tickers: list[str], period: str = "5y", chunk: int = 100, lo
     return closes
 
 
+def fetch_ssga_history(tickers: list[str], url: str, log=print) -> pd.DataFrame:
+    """Daily NAV, shares outstanding and net assets for SPDR funds from State Street's
+    NAV-history spreadsheets. Long format: date, ticker, nav, shares, tna."""
+    frames = []
+    for t in tickers:
+        try:
+            r = requests.get(url.format(t.lower()), headers={"User-Agent": "Mozilla/5.0"}, timeout=60)
+            r.raise_for_status()
+            raw = pd.read_excel(io.BytesIO(r.content), header=None)
+        except Exception as e:  # noqa: BLE001
+            log(f"  fund flows: {t} failed ({e})")
+            continue
+        header = raw.index[raw.iloc[:, 0].astype(str).str.strip().eq("Date")]
+        if not len(header):
+            log(f"  fund flows: {t} file has no Date header")
+            continue
+        df = raw.iloc[header[0] + 1:, :4].copy()
+        df.columns = ["date", "nav", "shares", "tna"]
+        df["date"] = pd.to_datetime(df["date"], format="%d-%b-%Y", errors="coerce")
+        df = df.dropna(subset=["date"])
+        df[["nav", "shares", "tna"]] = df[["nav", "shares", "tna"]].apply(pd.to_numeric, errors="coerce")
+        frames.append(df.assign(ticker=t))
+    if not frames:
+        return pd.DataFrame(columns=["date", "ticker", "nav", "shares", "tna"])
+    out = pd.concat(frames, ignore_index=True).sort_values(["ticker", "date"])
+    log(f"  fund flows: {out['ticker'].nunique()}/{len(tickers)} funds, through {out['date'].max():%Y-%m-%d}")
+    return out
+
+
 def fetch_market_caps(symbols: list[str], log=print) -> pd.Series:
     yf = _import_yf()
 

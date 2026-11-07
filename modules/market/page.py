@@ -595,6 +595,138 @@ with st.container(border=True):
             with st.expander("Does participation confirm a rotation? Tested on five years"):
                 confirmation_evidence(confirm)
 
+# ================================================================= fund flows
+def flows_evidence(stats: dict) -> None:
+    h, split = stats["horizon_weeks"], pd.Timestamp(stats["split"]).year
+    st.markdown(f"Each week, sectors were ranked by their fund flows as a share of assets (as known the day "
+                f"before). Did that rank line up with the next {h} weeks' return vs the other sectors?")
+    rows = []
+    for label, per in stats["signals"].items():
+        for key, name in (("before", f"before {split}"), ("after", f"{split} on")):
+            ic, sp = per[key]["ic"], per[key]["spread"]
+            rows.append({"Flows over": label, "Period": name, "Rank correlation": ic["ic"], "t": ic["t"],
+                         f"Top 2 − bottom 2, next {h} wks": _pct(sp["mean"]), "Periods": ic["n"]})
+    num = st.column_config.NumberColumn
+    ui.table(pd.DataFrame(rows), hide_index=True, column_config={
+        "Rank correlation": num(format="%+.3f"), "t": num(format="%+.1f"),
+        f"Top 2 − bottom 2, next {h} wks": num(format="%+.2f%%", help="Average return of the two sectors with "
+                                                                      "the biggest inflows minus the two with the "
+                                                                      "biggest outflows, vs the sectors' average")})
+    st.caption("Positive = money chasing a sector kept being right (momentum); negative = crowds arrived late "
+               "(contrarian). Near zero in either period = flows confirm nothing on their own.")
+
+
+st.markdown("##### Fund flows")
+flows_sum, flows_hist = load("flows_summary", "json"), load("flows_history")
+with st.container(border=True):
+    if not flows_sum or not flows_sum.get("rows") or flows_hist is None:
+        st.info("No fund-flow data yet. Run `python run_jobs.py`.")
+    else:
+        fr = pd.DataFrame(flows_sum["rows"]).sort_values("pct_4 wk", ascending=False)
+        fr["name"] = fr["ticker"].map(SECTOR_NAMES)
+        left, right = st.columns([1, 1.25])
+        with left:
+            fig = go.Figure(go.Bar(
+                x=fr["pct_4 wk"], y=fr["ticker"], orientation="h",
+                marker_color=[ui.PALETTE["teal"] if v >= 0 else ui.PALETTE["red"] for v in fr["pct_4 wk"]],
+                customdata=np.c_[fr["name"], fr["usd_4 wk"] / 1e9],
+                hovertemplate="<b>%{y}</b> · %{customdata[0]}<br>%{x:+.1f}% of assets<br>"
+                              "$%{customdata[1]:+.2f}bn<extra></extra>"))
+            fig.update_layout(height=330, margin={"l": 0, "r": 0, "t": 26, "b": 0},
+                              yaxis={"autorange": "reversed"},
+                              title={"text": "Net flows over 4 weeks, % of fund assets", "font": {"size": 13}})
+            ui.chart(fig, key="flows_bar")
+        with right:
+            table = pd.DataFrame({
+                "Fund": fr["ticker"],
+                **{f"{label} ($bn)": fr[f"usd_{label}"] / 1e9 for label in ("1 wk", "4 wk")},
+                "4 wk % assets": fr["pct_4 wk"], "13 wk % assets": fr["pct_13 wk"],
+                "vs history": fr["pct_rank_4wk"],
+            })
+            num = st.column_config.NumberColumn
+            ui.table(table, hide_index=True, height=35 * (len(table) + 1) + 3, column_config={
+                **{f"{label} ($bn)": num(format="%+.2f") for label in ("1 wk", "4 wk")},
+                "4 wk % assets": num(format="%+.1f%%"), "13 wk % assets": num(format="%+.1f%%"),
+                "vs history": num(format="%.0f", help="Percentile of the 4-week flow (% of assets) within the "
+                                                      "fund's own history: 95 = bigger inflows than 95% of days"),
+            })
+        st.caption(f"Flows = daily change in shares outstanding × NAV, from State Street's NAV-history files "
+                   f"for the Select Sector SPDRs (since 2003). Share splits, launches and XLRE's 2016 spin-off "
+                   f"are excluded. Through {fr['date'].max()}. Money moving in alongside a rotation is "
+                   "confirmation; a rotation without it, or against it, is less convincing.")
+        if flows_sum.get("stats"):
+            with st.expander("Have flows predicted anything? Tested since 2004"):
+                flows_evidence(flows_sum["stats"])
+
+# ================================================================= estimate revisions
+@st.cache_data(show_spinner=False)
+def _cached_other(module: str, name: str, kind: str, stamp):
+    return store.load_json(module, name) if kind == "json" else store.load_frame(module, name)
+
+
+def load_other(module: str, name: str, kind: str = "frame"):
+    """Another module's output (here: what TickerLake's publisher wrote)."""
+    return _cached_other(module, name, kind, store.stamp(module, name))
+
+
+st.markdown("##### Estimate revisions & analyst actions")
+rev, rev_names, rev_hist, rev_sum = (load_other("revisions", "sector_revisions"),
+                                     load_other("revisions", "revisions_names"),
+                                     load_other("revisions", "revisions_history"),
+                                     load_other("revisions", "summary", "json"))
+with st.container(border=True):
+    if rev is None or rev.empty or not rev_sum:
+        st.info("No revision data. It comes from the TickerLake project (its daily `analyst` stage, published "
+                "by the `revisions` job); see the README.")
+    else:
+        rev = rev.assign(etf=rev["gics_sector"].map(cfg.GICS_TO_ETF)).sort_values("rev_30d", ascending=False)
+        days = rev_sum["action_days"]
+        table = pd.DataFrame({
+            "Sector": rev["etf"], "Name": rev["gics_sector"], "Names": rev["names"],
+            "EPS rev. 30d": rev["rev_30d"], "EPS rev. 90d": rev["rev_90d"],
+            "Rising estimates": rev["rising_share"], "Revision balance": rev["breadth"],
+            **({f"Up/down-grades {days}d": [f"{int(u)} / {int(d)}" for u, d in zip(rev["upgrades"],
+                                                                                    rev["downgrades"])],
+                f"Targets raised/cut {days}d": [f"{int(u)} / {int(d)}" for u, d in zip(rev["targets_raised"],
+                                                                                        rev["targets_cut"])]}
+               if "upgrades" in rev else {}),
+        })
+        num = st.column_config.NumberColumn
+        ui.table(table, hide_index=True, height=35 * (len(table) + 1) + 3, column_config={
+            "EPS rev. 30d": num(format="%+.2f%%", help="Median change in next fiscal year's EPS estimate over "
+                                                     "30 days, across the sector's members"),
+            "EPS rev. 90d": num(format="%+.2f%%"),
+            "Rising estimates": num(format="%.0f%%", help="Share of members whose estimate rose over 30 days"),
+            "Revision balance": num(format="%+.0f", help="Analyst revisions over 30 days (this and next fiscal "
+                                                         "year): (up − down) / (up + down) × 100"),
+        })
+        if rev_names is not None and not rev_names.empty:
+            pick = st.selectbox("Sector", list(rev["gics_sector"]), key="rev_sector", label_visibility="collapsed",
+                                format_func=lambda g: f"{cfg.GICS_TO_ETF.get(g, '')} · {g}")
+            n = rev_names[rev_names["gics_sector"] == pick].dropna(subset=["rev_30d"]).sort_values("rev_30d")
+            show = pd.concat([n.tail(5).iloc[::-1], n.head(5)]).drop_duplicates("symbol")
+            ui.table(pd.DataFrame({"Company": show["symbol"] + " · " + show["name"].fillna(""),
+                                   "EPS rev. 30d": show["rev_30d"], "EPS rev. 90d": show["rev_90d"],
+                                   "Analysts up / down (30d)": [f"{int(u)} / {int(d)}" for u, d in
+                                                                zip(show["up_30d"].fillna(0),
+                                                                    show["down_30d"].fillna(0))]}),
+                     hide_index=True, column_config={"EPS rev. 30d": num(format="%+.1f%%"),
+                                                     "EPS rev. 90d": num(format="%+.1f%%")})
+        if rev_hist is not None and rev_hist["snapshot_date"].nunique() >= 5:
+            fig = go.Figure()
+            for g, s in rev_hist.sort_values("snapshot_date").groupby("gics_sector"):
+                fig.add_trace(go.Scatter(x=s["snapshot_date"], y=s["breadth"], mode="lines",
+                                         name=cfg.GICS_TO_ETF.get(g, g), line={"width": 1.4}))
+            fig.update_layout(height=280, margin={"l": 0, "r": 0, "t": 26, "b": 0},
+                              title={"text": "Revision balance by sector", "font": {"size": 13}})
+            ui.chart(fig, key="revision_history")
+        st.caption(f"Yahoo consensus via TickerLake, snapshot {rev_sum['snapshot_date']}: {rev_sum['covered']} of "
+                   f"{rev_sum['members']} members. Yahoo keeps no estimate history, so the daily snapshots "
+                   f"(since {rev_sum['first_snapshot']}, {rev_sum['snapshots']} so far) are what will let these "
+                   "readings be tested; a history chart appears after five. Rating actions on single stocks were "
+                   "tested on 2012-2026 history (TickerLake `scripts/backtest_analyst_ratings.py`): the price moves "
+                   "at the announcement, and what follows is too small to beat trading costs.")
+
 # ================================================================= leadership
 st.markdown("##### Sector leadership")
 lead_df, disp = load("sector_leadership"), load("sector_dispersion")

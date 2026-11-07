@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -34,7 +35,16 @@ def _atomic_write(path: Path, writer) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     writer(tmp)
-    os.replace(tmp, path)
+    # On Windows the replace fails while another process (e.g. the running hub) has the
+    # target open for reading; that lasts milliseconds, so retry briefly.
+    for attempt in range(20):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(0.1 * (attempt + 1))
 
 
 # ----------------------------------------------------------------- tables

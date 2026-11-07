@@ -6,5 +6,6 @@ pyarrow>=14
 yfinance>=0.2.50
 requests>=2.31
 lxml>=5.0
+openpyxl>=3.1  # State Street fund-flow files are .xlsx
 pytest>=8.0
 anthropic>=2.3

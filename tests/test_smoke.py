@@ -599,3 +599,54 @@ def test_sector_extras_on_demo(demo_data):
     assert store.load_frame("market", "sector_leadership").shape == (cfg.LEADERSHIP_WEEKS, len(cfg.SECTORS))
     pairs = store.load_json("market", "cross_asset")["pairs"]
     assert {p["sector"] for p in pairs} == {c["sector"] for c in cfg.CROSS_ASSET}
+
+
+def test_fund_flows_ignore_splits_and_launches():
+    import numpy as np
+    from modules.market import indicators as ind
+    days = pd.bdate_range("2024-01-01", periods=120)
+    shares = np.full(120, 1e8)
+    shares[100:] += 1e6  # a real creation: 1% more shares
+    nav = np.full(120, 50.0)
+    shares[110:] *= 2  # a 2-for-1 split
+    nav[110:] /= 2
+    hist = pd.DataFrame({"date": days, "ticker": "XLX", "nav": nav, "shares": shares, "tna": nav * shares})
+    flows, tna = ind.fund_flows(hist)
+    f = flows["XLX"]
+    assert f.iloc[:63].isna().all()  # launch quarter left out
+    assert f.iloc[100] == pytest.approx(1e6 * 50)
+    assert f.iloc[110] == 0  # the split is not money
+    assert ind.flow_share(flows, tna, 20)["XLX"].iloc[105] == pytest.approx(1e6 * 50 / (1e8 * 50) * 100)
+
+
+def test_flows_on_demo(demo_data):
+    from core import store
+    from modules.market import config as cfg
+    summary = store.load_json("market", "flows_summary")
+    assert {r["ticker"] for r in summary["rows"]} == set(cfg.FLOW_TICKERS)
+    assert set(summary["stats"]["signals"]) == {"4 wk", "13 wk"}
+    assert not store.load_frame("market", "flows_history").empty
+
+
+def test_market_page_with_revisions(demo_data):
+    """TickerLake's publisher output (fake, same schema) shows on the market page."""
+    from streamlit.testing.v1 import AppTest
+    from core import store
+    from modules.market import config as cfg
+    sectors = list(cfg.GICS_TO_ETF)
+    store.save_frame("revisions", "sector_revisions", pd.DataFrame({
+        "gics_sector": sectors, "names": 10, "rev_30d": 0.5, "rev_90d": 1.0, "rising_share": 60.0,
+        "breadth": 20.0, "upgrades": 3, "downgrades": 1, "targets_raised": 9, "targets_cut": 4}))
+    store.save_frame("revisions", "revisions_names", pd.DataFrame({
+        "symbol": ["AAA", "BBB"], "rev_30d": [5.0, -3.0], "rev_90d": [6.0, -4.0], "up_30d": [4, 0],
+        "down_30d": [0, 3], "gics_sector": sectors[0], "name": ["A Co", "B Co"]}))
+    dates = pd.date_range("2026-11-02", periods=6)
+    store.save_frame("revisions", "revisions_history", pd.DataFrame(
+        [{"snapshot_date": d, "gics_sector": g, "names": 10, "rev_30d": 0.1, "rev_90d": 0.2,
+          "rising_share": 50.0, "breadth": 5.0} for d in dates for g in sectors]))
+    store.save_json("revisions", "summary", {"snapshot_date": "2026-11-07", "snapshots": 6,
+                                             "first_snapshot": "2026-11-02", "members": 503, "covered": 501,
+                                             "action_days": 30})
+    page = AppTest.from_file(str(ROOT / "modules" / "market" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    assert any("Estimate revisions" in m.value for m in page.markdown)

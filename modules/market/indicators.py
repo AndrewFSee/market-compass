@@ -602,6 +602,51 @@ def cross_asset_check(rel: pd.Series, driver: pd.Series, kind: str, sign: int, w
     }
 
 
+# ----------------------------------------------------------------- fund flows
+def fund_flows(hist: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Daily net flows in dollars (change in shares x NAV) and net assets, date x ticker.
+
+    Not investor money, so left out:
+    - a share split (share count up, NAV down by the same factor): set to 0;
+    - a fund's first quarter, and any day moving more than half its assets: launches and
+      structural events such as XLRE's 2016 spin-off from XLF (shares x23 in a day)."""
+    nav = hist.pivot_table(index="date", columns="ticker", values="nav")
+    shares = hist.pivot_table(index="date", columns="ticker", values="shares")
+    tna = hist.pivot_table(index="date", columns="ticker", values="tna")
+    s_ratio, n_ratio = shares / shares.shift(), nav.shift() / nav
+    split = (s_ratio > 1.4) & ((s_ratio / n_ratio - 1).abs() < 0.05)
+    flows = (shares.diff() * nav).mask(split, 0.0)
+    flows = flows.mask((flows / tna.shift()).abs() > 0.5)
+    young = shares.notna().cumsum() <= 63
+    return flows.mask(young), tna
+
+
+def flow_share(flows: pd.DataFrame, tna: pd.DataFrame, days: int) -> pd.DataFrame:
+    """Net flows over the last `days` as % of net assets at the start of the window."""
+    return flows.rolling(days, min_periods=max(1, days // 2)).sum() / tna.shift(days) * 100
+
+
+def extreme_spread(signal: pd.DataFrame, fwd: pd.DataFrame, step: int, k: int = 2) -> dict:
+    """Forward return (vs the group) of the k highest-signal columns minus the k lowest,
+    on non-overlapping dates."""
+    fwd = fwd.sub(fwd.mean(axis=1), axis=0)
+    vals = []
+    for d in signal.index[::step]:
+        s, f = signal.loc[d], fwd.loc[d] if d in fwd.index else None
+        if f is None:
+            continue
+        ok = s.notna() & f.notna()
+        if ok.sum() < 2 * k + 1:
+            continue
+        order = s[ok].sort_values()
+        vals.append(f[order.index[-k:]].mean() - f[order.index[:k]].mean())
+    v = pd.Series(vals, dtype=float)
+    if len(v) < 8:
+        return {"mean": None, "t": None, "hit": None, "n": int(len(v))}
+    return {"mean": float(v.mean()), "t": float(v.mean() / v.std() * np.sqrt(len(v))) if v.std() > 0 else None,
+            "hit": float((v > 0).mean()), "n": int(len(v))}
+
+
 # ----------------------------------------------------------------- returns
 def period_returns(closes: pd.DataFrame, timeframes: list[str]) -> pd.DataFrame:
     """% return for each column over each timeframe, measured to its latest close."""

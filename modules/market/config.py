@@ -117,6 +117,16 @@ INTERNALS_BROAD = 50   # % of members beating SPY that counts as broad participa
 CONTRIBUTION_WINDOWS = {"1 wk": 5, "4 wk": 20, "13 wk": 63}  # drill-down periods, trading days
 INTERNALS_HISTORY_DAYS = 252  # participation history kept for the page
 
+# ---------------------------------------------------------------- fund flows
+# Daily NAV and shares outstanding from State Street's free NAV-history file for each SPDR
+# fund (since ~1998). Flow = change in shares x NAV. A file for date D is published the next
+# morning, so signals use flows through the day before.
+SSGA_NAV_URL = ("https://www.ssga.com/us/en/intermediary/library-content/products/fund-data/etfs/us/"
+                "navhist-us-en-{}.xlsx")
+FLOW_TICKERS = list(SECTORS)  # all Select Sector SPDRs
+FLOW_WINDOWS = {"1 wk": 5, "4 wk": 20, "13 wk": 63}  # trading days
+FLOW_HISTORY_DAYS = 252
+
 # ---------------------------------------------------------------- leadership & cross-asset
 LEADERSHIP_WEEKS = 52  # heatmap length
 DISPERSION_DAYS = 63   # trailing window for average pairwise correlation of sector returns

@@ -59,7 +59,7 @@ and the rest of the hub carries on.
 
 ## The companion projects
 
-To get the full hub, **clone the four companion repositories next to this one**, each
+To get the full hub, **clone the five companion repositories next to this one**, each
 with its own virtual environment. They are independent projects with their own READMEs,
 tests and Streamlit apps. The hub only needs each one's `scripts/publish_to_hub.py`.
 
@@ -69,6 +69,7 @@ tests and Streamlit apps. The hub only needs each one's `scripts/publish_to_hub.
 | [**macro-regime-nowcaster**](https://github.com/AndrewFSee/macro-regime-nowcaster) | `data/macro/`: the live nowcast and its walk-forward (point-in-time) recession history | Needs `FRED_API_KEY`. The history panel (`data/features.csv`) isn't in that repo: build it once with `python scripts/build_features.py`, which is slow (one refit per month), then again occasionally. The page warns when it's more than 45 days old. |
 | [**stochastic-vol-surface**](https://github.com/AndrewFSee/stochastic-vol-surface) | `data/vol/`: surface features per ticker, VIX/MOVE/OVX history, forecasts with outcomes | Its publisher makes no network calls. It reads what the project's own daily option-chain scraper collected, so run that scraper on a schedule (see its README). The page flags missed sessions. |
 | [**tail-risk-scenario-engine**](https://github.com/AndrewFSee/tail-risk-scenario-engine) | `data/tailrisk/`: return fan, P&L histogram, VaR/CVaR, hedges, optimiser, stress scenarios | The portfolio and scenarios come from its `configs/default.yaml` and `configs/scenarios/`. |
+| [**TickerLake**](https://github.com/AndrewFSee/TickerLake) | `data/revisions/`: sector EPS-estimate revisions and analyst rating actions | A data lake with its own daily scheduled run; its `analyst` stage snapshots Yahoo's consensus for every S&P 500 member. Its publisher reads only the lake. Yahoo keeps no estimate history, so the history starts when you start collecting. |
 
 ## Quick start (hub only)
 
@@ -104,7 +105,8 @@ projects/
 ├── credit-spread-analyzer/
 ├── macro-regime-nowcaster/
 ├── stochastic-vol-surface/
-└── tail-risk-scenario-engine/
+├── tail-risk-scenario-engine/
+└── TickerLake/
 ```
 
 ```bash
@@ -114,6 +116,7 @@ git clone https://github.com/AndrewFSee/credit-spread-analyzer.git
 git clone https://github.com/AndrewFSee/macro-regime-nowcaster.git
 git clone https://github.com/AndrewFSee/stochastic-vol-surface.git
 git clone https://github.com/AndrewFSee/tail-risk-scenario-engine.git
+git clone https://github.com/AndrewFSee/TickerLake.git
 ```
 
 A project cloned one level deeper (`macro-regime-nowcaster/macro-regime-nowcaster/`) is
@@ -234,6 +237,14 @@ Improving → Leading → Weakening → Lagging. ETFs whose RSI on the ETF/SPY r
 
   The table shows whether the latest moves agree and how strong the link has been, both
   recently and historically.
+- **Fund flows:** money moving into and out of each sector SPDR over 1, 4 and 13 weeks, in
+  dollars and as a share of the fund's assets, against the fund's own history. Flows are the
+  daily change in shares outstanding × NAV, from State Street's free NAV-history files.
+- **Estimate revisions & analyst actions** (from TickerLake), for each sector:
+  - the median 30- and 90-day change in next fiscal year's EPS estimate;
+  - the balance of analysts' upward and downward revisions;
+  - upgrades, downgrades and price-target changes over the last 30 days;
+  - the companies with the biggest revisions.
 
 **Market map.** An S&P 500 or Nasdaq 100 treemap, sized by market cap and coloured by
 return over the chosen period. Click a sector to zoom in.
@@ -472,6 +483,18 @@ the zig-zag of shorter windows.
 
   The page shows the last 52 weeks next to the full history, because these links come
   and go.
+- **Fund flows** (since 2004). How the flows are cleaned:
+  - share splits, each fund's first quarter and XLRE's 2016 spin-off from XLF are left out;
+  - signals use flows through the day before, since each file is published the next morning.
+
+  Ranking sectors by 4- or 13-week flows didn't line up with the next 4 weeks in either half
+  of the history (rank correlations −0.04 to +0.005). 13-week flows looked contrarian before
+  2015 (t −2.2), but not after.
+- **Analyst rating changes.** These were backtested in TickerLake on 154k events from
+  2012-2026 (`scripts/backtest_analyst_ratings.py`). Prices move at the announcement
+  (upgrades +1.2%, downgrades −1.7%) before you could trade at the next open. What follows
+  is too small to beat trading costs. Price-target raises minus cuts were statistically
+  clear only after 2019.
 
 ### Look-alikes
 

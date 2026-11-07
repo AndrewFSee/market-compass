@@ -68,13 +68,15 @@ def fetch_inputs(log=print) -> dict:
     log("Fetching rotation-map history...")
     rotation = sources.download_closes(cfg.rotation_tickers() + cfg.cross_asset_yahoo(), cfg.ROTATION_PERIOD,
                                        log=log)
+    log("Fetching fund flows (State Street)...")
+    ssga = sources.fetch_ssga_history(cfg.FLOW_TICKERS, cfg.SSGA_NAV_URL, log=log)
     log("Fetching index members...")
     cons = sources.fetch_constituents(log)
     log("Fetching stock prices (this takes a minute or two)...")
     stocks = sources.download_closes(cons["yf_symbol"].tolist(), cfg.PRICE_PERIOD, log=log)
     caps = _market_caps(cons["yf_symbol"].tolist(), log)
     missing += [t for t in cfg.all_etf_tickers() if t not in etf.columns]
-    return {"fred": fred, "etf": etf, "spy_long": spy_long, "vix_long": vix_long, "rotation_prices": rotation,
+    return {"fred": fred, "etf": etf, "spy_long": spy_long, "vix_long": vix_long, "rotation_prices": rotation, "ssga": ssga,
             "constituents": cons, "stocks": stocks, "caps": caps, "missing": missing, "demo": False}
 
 
@@ -190,6 +192,45 @@ def sector_internals(rot: pd.DataFrame, stocks: pd.DataFrame, cons: pd.DataFrame
     recent = part[part["date"] >= dates.iloc[-min(len(dates), cfg.INTERNALS_HISTORY_DAYS)]]
     return {"sector_internals": recent.reset_index(drop=True), "sector_contrib": contrib,
             "sector_confirmation": stats}
+
+
+def fund_flows(ssga: pd.DataFrame | None, rot: pd.DataFrame, session) -> dict:
+    """Sector fund flows from State Street's daily shares outstanding, and whether they
+    have said anything about the next weeks (config.FLOW_*)."""
+    if ssga is None or ssga.empty:
+        return {}
+    flows, tna = ind.fund_flows(ssga[ssga["date"] <= session])
+    shares = {label: ind.flow_share(flows, tna, n) for label, n in cfg.FLOW_WINDOWS.items()}
+    dollars = {label: flows.rolling(n, min_periods=1).sum() for label, n in cfg.FLOW_WINDOWS.items()}
+    rows = []
+    for t in flows.columns:
+        s4 = shares["4 wk"][t].dropna()
+        if s4.empty:
+            continue
+        row = {"ticker": t, "date": s4.index[-1].strftime("%Y-%m-%d"), "tna": float(tna[t].dropna().iloc[-1]),
+               "pct_rank_4wk": float((s4 < s4.iloc[-1]).mean() * 100), "since": s4.index[0].strftime("%Y-%m-%d")}
+        for label in cfg.FLOW_WINDOWS:
+            row[f"usd_{label}"] = float(dollars[label][t].dropna().iloc[-1])
+            row[f"pct_{label}"] = float(shares[label][t].dropna().iloc[-1])
+        rows.append(row)
+
+    # the test: last week's 4-week flows (known by then) vs the next weeks' relative return
+    etfs = [t for t in flows.columns if t in rot]
+    h, split = cfg.ROTATION_HORIZON, pd.Timestamp(cfg.ROTATION_SPLIT)
+    wk = ind.weekly(rot[[*etfs, cfg.BENCHMARK]])
+    lr = ind.log_ratio(wk[etfs], wk[cfg.BENCHMARK])
+    fwd = lr.shift(-h) - lr
+    stats = {"horizon_weeks": h, "split": cfg.ROTATION_SPLIT, "signals": {}}
+    for label in ("4 wk", "13 wk"):
+        sig = ind.weekly(shares[label].shift(1)).reindex(wk.index)  # flows through the day before
+        stats["signals"][label] = {
+            key: {"ic": ind.ic_summary(ind.cross_ic(sig[mask], fwd[mask], h)),
+                  "spread": ind.extreme_spread(sig[mask], fwd[mask], h)}
+            for key, mask in (("before", wk.index < split), ("after", wk.index >= split))}
+    keep = flows.index[-cfg.FLOW_HISTORY_DAYS:]
+    history = pd.concat({"flow": flows.loc[keep], "pct_4wk": shares["4 wk"].loc[keep]}, axis=1)
+    history = history.stack(level=1, future_stack=True).rename_axis(["date", "ticker"]).reset_index()
+    return {"flows_summary": {"rows": rows, "stats": stats}, "flows_history": history}
 
 
 def leadership(rot: pd.DataFrame) -> dict:
@@ -338,7 +379,8 @@ def build(inputs: dict, log=print) -> dict:
     rot = rot.loc[:session, [t for t in cfg.rotation_tickers() + cfg.cross_asset_yahoo() if t in rot]]
     rotation_path, rotation_now, rotation_stats = rotation(rot)
     log("Computing sector internals, leadership and cross-asset checks...")
-    extras = {**sector_internals(rot, stocks, cons, inputs["caps"]), **leadership(rot), **cross_asset(rot, fred)}
+    extras = {**sector_internals(rot, stocks, cons, inputs["caps"]), **leadership(rot), **cross_asset(rot, fred),
+              **fund_flows(inputs.get("ssga"), rot, session)}
 
     log("Computing returns...")
     etf_returns = ind.period_returns(etf.drop(columns=[cfg.VIX], errors="ignore"), cfg.TIMEFRAMES)
