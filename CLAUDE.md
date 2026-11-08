@@ -155,6 +155,10 @@ Publishers are thin: they call the project's own validated functions, never re-i
 - Job "analyst" runs last and writes `analyst/brief.json` + `brief_history.json` (one per
   day, `BRIEFS_KEPT`). Without credentials it logs a skip, it doesn't fail the run.
 - The page's chat is the one deliberate exception to "pages never call the network".
+- Tools say what lag is normal so briefs don't report it as missing data: the economic gauge's
+  final month trails by 1-2 months (75% coverage rule); the macro panel is a hand-rebuilt
+  walk-forward history (~3 h, rows knowable 60 days after their month); HYG's thin chain often
+  misses the 30-day fit, so `vol_overview` adds the last available reading with its date.
 - Needs `ANTHROPIC_API_KEY` in `.env` (app.py and run_jobs.py load it). Tests never call
   the API: they fake the client / `agent.ask`.
 

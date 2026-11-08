@@ -368,6 +368,24 @@ def test_analyst_tools_on_demo(demo_data):
         json.loads(t.call(args) if hasattr(t, "call") and t.name else t(**args))
 
 
+def test_analyst_tools_explain_lags_and_gaps(demo_data):
+    import numpy as np
+    from core import store
+    from modules.analyst import tools
+    econ = tools.data_freshness()["as_of"]["economic_gauge"]
+    assert econ["final_month"] and "release lag" in econ["note"]
+    assert tools.market_overview()["gauges"]["economic"]["release_status"] == econ
+    days = pd.bdate_range("2026-01-02", periods=5)
+    store.save_frame("vol", "overview", pd.DataFrame({"ticker": ["SPY", "HYG"], "date": days[-1],
+                                                      "atm_30d": [0.15, np.nan], "atm_30d_d5": [0.01, np.nan]}))
+    store.save_frame("vol", "history", pd.DataFrame({"date": list(days) * 2, "ticker": ["SPY"] * 5 + ["HYG"] * 5,
+                                                     "atm_30d": [0.15] * 5 + [0.06, 0.07, 0.05, np.nan, np.nan]}))
+    store.save_json("vol", "summary", {"as_of": "2026-01-08"})
+    rows = tools.vol_overview()["tickers_vol_pts"]
+    assert rows["HYG"]["iv_30d_last_available"] == {"date": "2026-01-06", "value": 5.0}
+    assert "iv_30d_last_available" not in rows["SPY"]
+
+
 class _Msg:
     def __init__(self, content, stop, usage=(100, 20)):
         from types import SimpleNamespace as NS

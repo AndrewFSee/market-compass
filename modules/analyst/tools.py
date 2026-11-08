@@ -28,19 +28,47 @@ def _r(x, digits: int = 2):
     return x
 
 
+def _econ_status() -> dict | None:
+    """The economic gauge's last final month, the provisional months after it, and why the gap is normal."""
+    g = (store.load_json("market", "gauges") or {}).get("economic")
+    h = store.load_frame("market", "econ_history")
+    if not g or h is None:
+        return None
+    from modules.market import config as mcfg
+    later = h[h.index > pd.Timestamp(g["date"])]
+    return {"final_month": pd.Timestamp(g["date"]).strftime("%Y-%m"),
+            "provisional_months": {d.strftime("%Y-%m"): {"value": r["economic"], "share_reported": r["coverage"]}
+                                   for d, r in later.iterrows()},
+            "note": (f"Monthly indicators trickle out over several weeks; a month is final once "
+                     f"{mcfg.ECON_COVERAGE_THRESHOLD:.0%} of them have reported, usually 3-4 weeks after it ends "
+                     "(housing and factory orders come last). A final month one to two months back is normal "
+                     "release lag, not stale data.")}
+
+
 def data_freshness() -> dict:
-    """When each module last published, plus each module's own as-of date."""
+    """When each module last published, plus each module's own as-of date and what lag is normal for it."""
+    from modules.macro import config as macro_cfg
     out = {"published_utc": {m: max(v.values()) for m, v in store.manifest().items()}}
     meta = store.load_json("market", "meta") or {}
+    macro = store.load_json("macro", "summary") or {}
+    panel = macro.get("panel") or {}
+    signals = (macro.get("nowcast") or {}).get("signal_as_of") or {}
     out["as_of"] = {
         "market_prices": meta.get("as_of"),
+        "economic_gauge": _econ_status(),
         "credit": (store.load_json("credit", "summary") or {}).get("as_of"),
         "vol_surfaces": (store.load_json("vol", "summary") or {}).get("as_of"),
-        "macro_panel": ((store.load_json("macro", "summary") or {}).get("panel") or {}).get("through"),
+        "macro_live_nowcast_signals": max(signals.values()) if signals else None,
+        "macro_history_panel": panel and {
+            "through": panel.get("through"), "built": panel.get("built"),
+            "note": ("Walk-forward history of the nowcast, used for the chart and past readings; the live "
+                     "nowcast above is separate. It is rebuilt by hand (about 3 hours), and its rows count as "
+                     "knowable 60 days after their month, so a panel ending one to two months back is current. "
+                     f"Flag it only if it was built more than {macro_cfg.PANEL_STALE_DAYS} days ago.")},
         "tail_risk_data": (store.load_json("tailrisk", "summary") or {}).get("data_through"),
         "lookalikes": (store.load_json("analogs", "summary") or {}).get("as_of"),
     }
-    return out
+    return _r(out)
 
 
 def market_overview() -> dict:
@@ -58,6 +86,8 @@ def market_overview() -> dict:
             "next_period_link": link.get("predictive"), "next_period": link.get("horizon_label"),
             "next_period_link_reliable": link.get("significant"), "independent_periods": link.get("n_predictive"),
         }
+    if "economic" in gauges:
+        gauges["economic"]["release_status"] = _econ_status()
     out = {"as_of": (store.load_json("market", "meta") or {}).get("as_of"), "gauges": gauges}
     b = store.load_frame("market", "breadth")
     if b is not None and len(b) > 21:
@@ -154,15 +184,22 @@ def vol_overview(tickers: list[str] | None = None) -> dict:
             "ts_30_91": "slope_30_to_91d", "vrp_30d": "variance_premium", "fc21_vol": "forecast_21d_vol",
             "earn_days_to": "earnings_in_days"}
     want = [t.upper() for t in (tickers or ["SPY", "QQQ", "IWM", "TLT", "HYG"]) if t.upper() in pts.index]
+    hist = store.load_frame("vol", "history")
     rows = {}
     for t in want:
         r = pts.loc[t]
         rows[t] = {name: (r[c] * 100 if c in ("atm_30d", "rr25_30d", "ts_30_91", "vrp_30d", "fc21_vol")
                           and pd.notna(r[c]) else r[c]) for c, name in cols.items() if c in r}
+        if pd.isna(r.get("atm_30d")) and hist is not None:  # thin chains miss the 30-day fit on some days
+            past = hist[(hist["ticker"] == t) & hist["atm_30d"].notna()]
+            if len(past):
+                rows[t]["iv_30d_last_available"] = {"date": past["date"].iloc[-1], "value": past["atm_30d"].iloc[-1] * 100}
     out["tickers_vol_pts"] = rows
     out["notes"] = ("Vol in vol points. Risk reversal = 25-delta call minus put (negative = puts richer). "
                     "Slope = 91d minus 30d ATM (negative = inverted). Variance premium = 30d implied minus 21d "
-                    "realised.")
+                    "realised. Thinly traded chains (HYG especially) don't fit every expiry every day, so a "
+                    "missing short-dated reading is expected: quote iv_30d_last_available with its date. "
+                    "For credit, the spreads in credit_overview are the better measure.")
     return _r(out)
 
 
