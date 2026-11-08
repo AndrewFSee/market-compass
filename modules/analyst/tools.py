@@ -62,7 +62,7 @@ def data_freshness() -> dict:
         "macro_history_panel": panel and {
             "through": panel.get("through"), "built": panel.get("built"),
             "note": ("Walk-forward history of the nowcast, used for the chart and past readings; the live "
-                     "nowcast above is separate. It is rebuilt by hand (about 3 hours), and its rows count as "
+                     "nowcast above is separate. It is rebuilt on the 20th of each month (about 3 hours), and its rows count as "
                      "knowable 60 days after their month, so a panel ending one to two months back is current. "
                      f"Flag it only if it was built more than {macro_cfg.PANEL_STALE_DAYS} days ago.")},
         "tail_risk_data": (store.load_json("tailrisk", "summary") or {}).get("data_through"),

@@ -101,7 +101,8 @@ Publishers are thin: they call the project's own validated functions, never re-i
   `data/features.csv`), summary.json (live nowcast, config from `config/settings.yaml` as in
   `run_nowcast.py`). Only the walk-forward panel is used as history: a single
   `Nowcaster.run()` history is in-sample. The panel is not rebuilt by the job
-  (`scripts/build_features.py`, slow); the page warns when it is >45 days old.
+  (`scripts/build_features.py --start 1967-01-31`, ~3 h); the monthly task below rebuilds it,
+  and the page warns when it is >45 days old.
 - **vol** (stochastic-vol-surface) -> `data/vol/`: overview, history, market, forecasts,
   summary.json. No network: reads what the project's own scheduled scrapers wrote, so the
   page flags missed sessions (the scrapers are the Task Scheduler jobs DailyScraper /
@@ -133,6 +134,11 @@ Publishers are thin: they call the project's own validated functions, never re-i
 - `scripts/register_task.ps1` registers `\MarketCompass\HubRefresh` (weekdays 6:15 PM, pythonw,
   S4U), after the vol scrapers (`\StochasticVolSurface\DailyScraper` 4:30 PM). The user runs
   it; registering persistent tasks needs their approval.
+- `scripts/register_panel_task.ps1` registers `\MarketCompass\MacroPanelRebuild` (20th of each
+  month, 8 PM, S4U; registered 2026-11-08, needs an elevated prompt). It is XML-defined (the cmdlets
+  have no monthly trigger) and runs `scripts/rebuild_macro_panel.py`: deletes a features.partial.csv
+  older than a day (resuming pins that run's FRED cache), keeps features.prev.csv and restores it
+  if the new panel is shorter, then runs `run_jobs.py --only macro`. Log: `data/logs/macro_panel.log`.
 - Task triggers created with a UTC offset (`...T16:30:00-04:00`) fire an hour early after DST
   ends. `scripts/fix_task_timezones.ps1` strips the offset so they follow local time; S4U tasks
   (HubRefresh, DailyScraper, PrecloseScraper, TickerLake-Daily) need an elevated prompt.
@@ -156,7 +162,7 @@ Publishers are thin: they call the project's own validated functions, never re-i
   day, `BRIEFS_KEPT`). Without credentials it logs a skip, it doesn't fail the run.
 - The page's chat is the one deliberate exception to "pages never call the network".
 - Tools say what lag is normal so briefs don't report it as missing data: the economic gauge's
-  final month trails by 1-2 months (75% coverage rule); the macro panel is a hand-rebuilt
+  final month trails by 1-2 months (75% coverage rule); the macro panel is a monthly-rebuilt
   walk-forward history (~3 h, rows knowable 60 days after their month); HYG's thin chain often
   misses the 30-day fit, so `vol_overview` adds the last available reading with its date.
 - Needs `ANTHROPIC_API_KEY` in `.env` (app.py and run_jobs.py load it). Tests never call

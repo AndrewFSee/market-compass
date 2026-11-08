@@ -66,7 +66,7 @@ tests and Streamlit apps. The hub only needs each one's `scripts/publish_to_hub.
 | Project | What it adds to the hub | Notes |
 |---|---|---|
 | [**credit-spread-analyzer**](https://github.com/AndrewFSee/credit-spread-analyzer) | `data/credit/`: spreads (bps and % points), real-time stress-regime probability, overlay equity weight, rating-tier history, 5-day spread forecast | Runs first, because the market gauges use its high-yield spread history. No API key needed. FRED serves only about 3 years of the ICE BofA OAS series; you can splice a longer licensed history in yourself (see that project's README). |
-| [**macro-regime-nowcaster**](https://github.com/AndrewFSee/macro-regime-nowcaster) | `data/macro/`: the live nowcast and its walk-forward (point-in-time) recession history | Needs `FRED_API_KEY`. The history panel (`data/features.csv`) isn't in that repo: build it once with `python scripts/build_features.py`, which is slow (one refit per month), then again occasionally. The page warns when it's more than 45 days old. |
+| [**macro-regime-nowcaster**](https://github.com/AndrewFSee/macro-regime-nowcaster) | `data/macro/`: the live nowcast and its walk-forward (point-in-time) recession history | Needs `FRED_API_KEY`. The history panel (`data/features.csv`) isn't in that repo: build it once with `python scripts/build_features.py --start 1967-01-31`, which is slow (one refit per month, about 3 hours). After that the hub's monthly task rebuilds it (see *Scheduling*). The page warns when it's more than 45 days old. |
 | [**stochastic-vol-surface**](https://github.com/AndrewFSee/stochastic-vol-surface) | `data/vol/`: surface features per ticker, VIX/MOVE/OVX history, forecasts with outcomes | Its publisher makes no network calls. It reads what the project's own daily option-chain scraper collected, so run that scraper on a schedule (see its README). The page flags missed sessions. |
 | [**tail-risk-scenario-engine**](https://github.com/AndrewFSee/tail-risk-scenario-engine) | `data/tailrisk/`: return fan, P&L histogram, VaR/CVaR, hedges, optimiser, stress scenarios | The portfolio and scenarios come from its `configs/default.yaml` and `configs/scenarios/`. |
 | [**TickerLake**](https://github.com/AndrewFSee/TickerLake) | `data/revisions/`: sector EPS-estimate revisions and analyst rating actions | A data lake with its own daily scheduled run; its `analyst` stage snapshots Yahoo's consensus for every S&P 500 member. Its publisher reads only the lake. Yahoo keeps no estimate history, so the history starts when you start collecting. |
@@ -544,6 +544,13 @@ after that project's scraper.
   - runs whether or not you're logged on;
   - catches up a missed run.
 
+- **Macro panel, monthly:** `scriptsegister_panel_task.ps1` (from an elevated prompt)
+  registers `\MarketCompass\MacroPanelRebuild`:
+  - 8:00 PM on the 20th of each month, once most of the previous month's data is out;
+  - rebuilds macro-regime-nowcaster's walk-forward panel (about 3 hours), then republishes it;
+  - puts the previous panel back if the new one comes out shorter;
+  - logs to `data/logs/macro_panel.log`.
+
   Task triggers created with a fixed UTC offset fire an hour early once daylight saving
   ends. `scripts\fix_task_timezones.ps1 [-WhatIf]` rewrites them to follow local time.
   Run it from an elevated prompt for tasks set to "run whether user is logged on or not".
@@ -606,6 +613,7 @@ modules/
                         config + read-only page for each companion project's output
 scripts/
   register_task.ps1     Windows scheduled task for the nightly refresh
+  register_panel_task.ps1  Monthly task: rebuild the macro panel (rebuild_macro_panel.py)
   fix_task_timezones.ps1  Make scheduled tasks follow local time across DST
 tests/test_smoke.py     End-to-end tests on synthetic data
 docs/screenshots/       Images in this README
