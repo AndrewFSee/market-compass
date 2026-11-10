@@ -237,6 +237,70 @@ def test_tailrisk_page_renders(tmp_path, monkeypatch):
     assert any(h.value == "Stress scenarios" for h in page.subheader)
 
 
+def _fake_augury(tmp_path, monkeypatch):
+    """Data in the schema of augury's scripts/publish_to_hub.py (SPY with an IV view, AAPL without)."""
+    import numpy as np
+    from core import store
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    as_of = pd.Timestamp("2026-03-02")
+    rows = []
+    for t, iv in (("SPY", 0.2), ("AAPL", np.nan)):
+        for h in (1, 5, 21):
+            s = 0.012 * np.sqrt(h)
+            rows.append({"horizon": h, "as_of": as_of, "last_price": 100.0, "vol_ann": 0.19, "var_99": -2.3 * s,
+                         "var_95": -1.6 * s, "es_99": -2.8 * s, "es_95": -2.0 * s, "lo_90": 100 * (1 - 1.6 * s),
+                         "median": 100.0, "hi_90": 100 * (1 + 1.6 * s), "p_up": 0.52, "model": "gjr-skewt",
+                         "ticker": t, "group": "Index ETFs" if t == "SPY" else "Single stocks",
+                         "gjr_vol_ann": 0.2, "realised_vol_21d": 0.17, "iv": iv,
+                         "iv_symbol": "^VIX" if t == "SPY" else None})
+    store.save_frame("augury", "forecast", pd.DataFrame(rows))
+    fdays = pd.bdate_range(as_of + pd.offsets.BDay(1), periods=21)
+    store.save_frame("augury", "bands", pd.concat([pd.DataFrame(
+        {"date": fdays, **{f"q{q}": 100 + (q - 50) / 10 * np.sqrt(np.arange(1, 22)) for q in (5, 25, 50, 75, 95)},
+         "ticker": t, "day": np.arange(1, 22)}) for t in ("SPY", "AAPL")], ignore_index=True))
+    pdays = pd.bdate_range(end=as_of, periods=260)
+    store.save_frame("augury", "prices", pd.DataFrame({"ticker": ["SPY"] * 260 + ["AAPL"] * 260,
+                                                       "date": list(pdays) * 2, "close": 100.0}))
+    rng = np.random.default_rng(0)
+    y = rng.normal(0, 0.01, 300)
+    store.save_frame("augury", "track", pd.DataFrame({
+        "origin": pd.bdate_range(end=as_of, periods=300), "model": "augury", "horizon": 1, "y": y, "crps": 0.005,
+        "pit": rng.uniform(size=300), "std": 0.01, "var_1": -0.023, "hit_1": y < -0.023, "var_5": -0.016,
+        "hit_5": y < -0.016, "cov_50": True, "width_50": 0.013, "cov_90": True, "width_90": 0.033, "ticker": "SPY"}))
+    var = {"breaches": 3, "rate": 0.01, "kupiec_p": 0.9, "christoffersen_p": 0.5, "recent_n": 250,
+           "recent_breaches": 3, "recent_expected": 2.5, "recent_zone": "Green"}
+    store.save_json("augury", "summary", {
+        "as_of": as_of.isoformat(), "published": "2026-03-02T18:20:00", "demo": False, "augury_version": "0.2.0",
+        "groups": {"Index ETFs": ["SPY"], "Single stocks": ["AAPL"]},
+        "models": {"SPY": "gjr-skewt+iv0.5", "AAPL": "gjr-skewt"}, "iv_views": {"SPY": "^VIX"},
+        "track_start": "2016-01-01", "errors": {"XYZ": "ValueError: not enough price history"},
+        "scores": {"SPY": {"n": 300, "since": "2025-01-02", "through": "2026-03-02",
+                           "var": {"0.01": var, "0.05": {**var, "rate": 0.05}},
+                           "coverage_90": {"1": 0.9, "5": 0.91, "21": 0.92},
+                           "coverage_50": {"1": 0.5, "5": 0.5, "21": 0.5},
+                           "skill": {"1": 0.003, "5": 0.004, "21": 0.004}}}})
+
+
+def test_augury_page_renders(tmp_path, monkeypatch):
+    _fake_augury(tmp_path, monkeypatch)
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "augury" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    assert page.warning  # forecasts months old -> stale warning
+    assert any(m.label == "Skill vs plain GJR, 1 day" for m in page.metric)
+    page.selectbox(key="aug_ticker").select("AAPL").run()  # no track record yet
+    assert not page.exception, page.exception
+    assert page.info
+
+
+def test_augury_page_without_data(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "augury" / "page.py"), default_timeout=60).run()
+    assert not page.exception
+    assert page.info
+
+
 def test_tailrisk_page_without_data(tmp_path, monkeypatch):
     monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
     from streamlit.testing.v1 import AppTest

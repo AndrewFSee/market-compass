@@ -9,7 +9,7 @@ Market Compass is two things:
   performance and rotation, a market map, a historical look-alike engine and a
   Claude-powered analyst.
   All of it is built from public data.
-- **A home for four companion projects.** Each companion is its own repository with its own
+- **A home for five companion projects.** Each companion is its own repository with its own
   models and dependencies. A nightly job runs each project's publish script with that
   project's own Python, and the hub shows the results on one page per project. A sidebar
   link opens each project's full app, starting it first if it isn't running.
@@ -52,6 +52,7 @@ Market Compass is two things:
 | **Macro Regime** | [macro-regime-nowcaster](https://github.com/AndrewFSee/macro-regime-nowcaster) | Recession probability (point-in-time history since 1967), GDP nowcast, latent macro factors |
 | **Volatility** | [stochastic-vol-surface](https://github.com/AndrewFSee/stochastic-vol-surface) | VIX family, implied vol by ticker (skew, term slope, variance risk premium), 21-day vol forecasts |
 | **Tail Risk** | [tail-risk-scenario-engine](https://github.com/AndrewFSee/tail-risk-scenario-engine) | 21-day VaR/CVaR from 20,000 simulated paths, hedges, CVaR-optimal weights, stress scenarios |
+| **Risk Forecasts** | [augury](https://github.com/AndrewFSee/augury) | Per-ticker 1/5/21-day return distributions (VaR, ES, price ranges, forecast vol) for 28 ETFs and stocks, with a daily out-of-sample VaR track record since 2016 |
 
 The first three pages work with this repository alone. Each companion page reads what
 its project published. If a project isn't installed, its page says there's no data yet
@@ -59,7 +60,7 @@ and the rest of the hub carries on.
 
 ## The companion projects
 
-To get the full hub, **clone the five companion repositories next to this one**, each
+To get the full hub, **clone the six companion repositories next to this one**, each
 with its own virtual environment. They are independent projects with their own READMEs,
 tests and Streamlit apps. The hub only needs each one's `scripts/publish_to_hub.py`.
 
@@ -69,6 +70,7 @@ tests and Streamlit apps. The hub only needs each one's `scripts/publish_to_hub.
 | [**macro-regime-nowcaster**](https://github.com/AndrewFSee/macro-regime-nowcaster) | `data/macro/`: the live nowcast and its walk-forward (point-in-time) recession history | Needs `FRED_API_KEY`. The history panel (`data/features.csv`) isn't in that repo: build it once with `python scripts/build_features.py --start 1967-01-31`, which is slow (one refit per month, about 3 hours). After that the hub's monthly task rebuilds it (see *Scheduling*). The page warns when it's more than 45 days old. |
 | [**stochastic-vol-surface**](https://github.com/AndrewFSee/stochastic-vol-surface) | `data/vol/`: surface features per ticker, VIX/MOVE/OVX history, forecasts with outcomes | Its publisher makes no network calls. It reads what the project's own daily option-chain scraper collected, so run that scraper on a schedule (see its README). The page flags missed sessions. |
 | [**tail-risk-scenario-engine**](https://github.com/AndrewFSee/tail-risk-scenario-engine) | `data/tailrisk/`: return fan, P&L histogram, VaR/CVaR, hedges, optimiser, stress scenarios | The portfolio and scenarios come from its `configs/default.yaml` and `configs/scenarios/`. |
+| [**augury**](https://github.com/AndrewFSee/augury) | `data/augury/`: forecast table, 21-day price bands, recent prices, every past forecast with its outcome, track-record scores | Downloads prices from Yahoo. The first run scores every day since 2016 for 28 tickers (about 7 minutes); after that it recomputes only the last few weeks (under a minute). |
 | [**TickerLake**](https://github.com/AndrewFSee/TickerLake) | `data/revisions/`: sector EPS-estimate revisions and analyst rating actions | A data lake with its own daily scheduled run; its `analyst` stage snapshots Yahoo's consensus for every S&P 500 member. Its publisher reads only the lake. Yahoo keeps no estimate history, so the history starts when you start collecting. |
 
 ## Quick start (hub only)
@@ -148,7 +150,7 @@ publish script, so one `FRED_API_KEY` serves the hub and the macro project.
 
 ```bash
 cd market-compass
-python run_jobs.py                     # credit -> market -> analogs -> macro -> vol -> tailrisk -> analyst
+python run_jobs.py                     # credit -> market -> analogs -> macro -> vol -> tailrisk -> augury -> analyst
 streamlit run app.py
 ```
 
@@ -156,9 +158,9 @@ A project that isn't cloned, or has no `.venv`, is skipped with a one-line note 
 of failing the run. `python run_jobs.py --only market credit` runs a subset.
 
 **6. The full apps.** The sidebar's *Other dashboards* links open each project's own
-Streamlit app (ports 8502-8505). A link to an app that isn't running starts it with that
+Streamlit app (ports 8502-8506). A link to an app that isn't running starts it with that
 project's venv, waits for it and then forwards you. `python start_apps.py` starts the hub
-and all four apps at once (`--status`, `--stop`); their logs go to `data/logs/apps/`.
+and all five apps at once (`--status`, `--stop`); their logs go to `data/logs/apps/`.
 
 ---
 
@@ -334,6 +336,23 @@ The page shows:
 - historical and parametric stress scenarios.
 
 ![Tail Risk page: VaR/CVaR, return distribution, simulated paths, hedges, CVaR-optimal weights and stress scenarios](docs/screenshots/tail-risk.png)
+
+### Risk Forecasts
+
+From augury. Each ticker gets GJR-GARCH with skewed-t shocks fitted on its last two years;
+SPY, QQQ, IWM, TLT and GLD also blend in their implied-vol index (VIX, VXN, MOVE, GVZ),
+the only assets where that was shown to help. The page shows:
+
+- a table of 1-day 99% VaR, 1-day and 21-day 90% ranges, 5-day 95% VaR and forecast vs
+  realised vol for 28 ETFs and stocks, with each one's VaR breaches over the last 250
+  sessions and Basel zone;
+- a fan chart and VaR / expected shortfall at 1, 5 and 21 days for any ticker;
+- that ticker's track record: every day since 2016, the forecast made the night before
+  against the return that followed, with breach counts, Kupiec and Christoffersen tests,
+  interval hit rates and the implied-vol view's skill against plain GJR.
+
+The Volatility page forecasts the level of 21-day vol; this one forecasts the whole return
+distribution at short horizons, so the two complement each other.
 
 ### Home
 
@@ -544,7 +563,8 @@ after that project's scraper.
   - runs whether or not you're logged on;
   - catches up a missed run.
 
-- **Macro panel, monthly:** `scriptsegister_panel_task.ps1` (from an elevated prompt)
+- **Macro panel, monthly:** `scripts
+egister_panel_task.ps1` (from an elevated prompt)
   registers `\MarketCompass\MacroPanelRebuild`:
   - 8:00 PM on the 20th of each month, once most of the previous month's data is out;
   - rebuilds macro-regime-nowcaster's walk-forward panel (about 3 hours), then republishes it;
@@ -567,7 +587,7 @@ From least to most effort:
    to `LINKS`. It stays a separate app with a sidebar link that starts it on demand.
 2. **Mount it as a page.** Add its script to `PAGES` with an absolute path and remove its
    `st.set_page_config(...)` call (the hub sets it once).
-3. **Split it into a job and a page** (what the four companions do). Write a publish script
+3. **Split it into a job and a page** (what the companions do). Write a publish script
    that ends with `store.save_frame("<module>", "<name>", df)` and register it in `JOBS` as
    `{"cmd": [venv_python(path), "scripts/publish_to_hub.py"], "cwd": str(path)}`. Then add
    `modules/<name>/page.py`, which only reads with `store.load_frame`. You get one
@@ -609,7 +629,7 @@ modules/
   market/               config, sources (network), indicators (pure), job, page, demo
   analogs/              config, engine (pure), job, page
   analyst/              config, tools (read-only), agent (SDK tool runner), job, page
-  credit/ macro/ vol/ tailrisk/
+  credit/ macro/ vol/ tailrisk/ augury/
                         config + read-only page for each companion project's output
 scripts/
   register_task.ps1     Windows scheduled task for the nightly refresh
