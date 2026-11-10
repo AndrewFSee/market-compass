@@ -40,8 +40,15 @@ SETUP = ("Add your Anthropic API key to the hub's `.env` file as `ANTHROPIC_API_
 st.title("Analyst")
 history = load("brief_history") or []
 brief = load("brief")
+attempt = load("last_attempt")
+failed = attempt and not attempt["ok"] and (not brief or attempt["at"] > brief["generated"])
+failure = (f"The {datetime.fromisoformat(attempt['at']):%b %d %I:%M %p} attempt failed because "
+           f"{attempt['reason'].rstrip('.')}." if failed else "")
+if failed and brief:  # the brief below is older than the latest attempt
+    st.warning(f"No new brief since {datetime.fromisoformat(brief['generated']):%b %d}. {failure} Then run "
+               "`python run_jobs.py --only analyst`.", icon=":material/warning:")
 if not brief:
-    st.info("No brief yet. " + SETUP)
+    st.info(f"No brief yet. {failure} {SETUP}")
 else:
     options = [b["generated"] for b in history] or [brief["generated"]]
     c1, c2 = st.columns([3, 1], vertical_alignment="center")

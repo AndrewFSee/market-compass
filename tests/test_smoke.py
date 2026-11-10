@@ -467,6 +467,39 @@ def test_analyst_page_brief_and_chat(tmp_path, monkeypatch):
     assert any(m.value == "Because spreads widened." for m in at.markdown)
 
 
+def test_analyst_failure_is_recorded_and_shown(tmp_path, monkeypatch):
+    from types import SimpleNamespace as NS
+
+    import anthropic
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from core import store
+    from modules.analyst import agent, job
+    from streamlit.testing.v1 import AppTest
+    page_path = str(ROOT / "modules" / "analyst" / "page.py")
+    brief = {"generated": "2026-11-06T18:20:00", "data_as_of": "Nov 06, 2026", "model": "claude-opus-5-5",
+             "text": "Old brief.", "stop_reason": "end_turn", "tool_calls": [], "usage": {}}
+    store.save_json("analyst", "brief", brief)
+    store.save_json("analyst", "brief_history", [brief])
+
+    def rejected(*a, **k):
+        resp = NS(status_code=401, headers={}, request=NS(method="POST", url="https://api.anthropic.com/v1/messages"))
+        raise anthropic.AuthenticationError("invalid x-api-key", response=resp,
+                                            body={"error": {"message": "invalid x-api-key"}})
+    monkeypatch.setattr(agent, "ask", rejected)
+    with pytest.raises(RuntimeError, match="rejected the key"):   # still fails the job in run_jobs
+        job.run(log=lambda *a: None)
+    assert store.load_json("analyst", "last_attempt")["ok"] is False
+    at = AppTest.from_file(page_path, default_timeout=60).run()
+    assert not at.exception and "No new brief since Nov 06" in at.warning[0].value
+    assert "ANTHROPIC_API_KEY" in at.warning[0].value
+
+    monkeypatch.setattr(agent, "ask", lambda *a, **k: {"text": "New brief.", "stop_reason": "end_turn", "usage": {},
+                                                       "tool_calls": [], "model": "claude-opus-5-5"})
+    job.run(log=lambda *a: None)
+    at = AppTest.from_file(page_path, default_timeout=60).run()
+    assert not at.exception and not at.warning                    # a success clears it
+
+
 def test_launch_page_starts_app_then_forwards(tmp_path, monkeypatch):
     """A sidebar link to a stopped app starts it once, waits for the port, then forwards."""
     monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))

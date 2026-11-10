@@ -161,6 +161,9 @@ Publishers are thin: they call the project's own validated functions, never re-i
 - Job "analyst" runs last and writes `analyst/brief.json` + `brief_history.json` (one per
   day, `BRIEFS_KEPT`). Without credentials it logs a skip, it doesn't fail the run.
 - The page's chat is the one deliberate exception to "pages never call the network".
+- Each brief attempt writes `analyst/last_attempt.json` (ok + a one-line reason, e.g. a 401 means the
+  key was rejected). The page warns when the latest attempt failed after the brief it shows; the job
+  still raises so run_jobs logs it as FAILED.
 - Tools say what lag is normal so briefs don't report it as missing data: the economic gauge's
   final month trails by 1-2 months (75% coverage rule); the macro panel is a monthly-rebuilt
   walk-forward history (~3 h, rows knowable 60 days after their month); HYG's thin chain often
