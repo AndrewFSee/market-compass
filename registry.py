@@ -47,6 +47,7 @@ MACRO = project("macro-regime-nowcaster")
 VOL = project("stochastic-vol-surface")
 TAILRISK = project("tail-risk-scenario-engine")
 TICKERLAKE = project("TickerLake")
+AUGURY = project("augury")
 
 PAGES = {
     "Hub": [
@@ -57,6 +58,7 @@ PAGES = {
         {"path": "modules/credit/page.py", "title": "Credit", "icon": ":material/account_balance:"},
         {"path": "modules/macro/page.py", "title": "Macro Regime", "icon": ":material/public:"},
         {"path": "modules/vol/page.py", "title": "Volatility", "icon": ":material/ssid_chart:"},
+        {"path": "modules/augury/page.py", "title": "Risk Forecasts", "icon": ":material/query_stats:"},
     ],
     "Research": [
         {"path": "modules/analogs/page.py", "title": "Look-alikes", "icon": ":material/history:"},
@@ -82,6 +84,8 @@ LINKS = [
      "app": streamlit_app(VOL, "src/dashboard/app.py", 8504)},
     {"title": "Tail Risk Engine (full)", "url": "http://localhost:8505",
      "app": streamlit_app(TAILRISK, "app/streamlit_app.py", 8505)},
+    {"title": "Augury Risk Monitor (full)", "url": "http://localhost:8506",
+     "app": streamlit_app(AUGURY, "dashboard/app.py", 8506)},
 ]
 
 JOBS = {
@@ -93,6 +97,8 @@ JOBS = {
     "vol": {"cmd": [venv_python(VOL), "scripts/publish_to_hub.py"], "cwd": str(VOL)},
     "tailrisk": {"cmd": [venv_python(TAILRISK), "scripts/publish_to_hub.py"],
                  "cwd": str(TAILRISK)},
+    # 1/5/21-day forecast distributions + daily VaR track record; first run builds the record (~6 min)
+    "augury": {"cmd": [venv_python(AUGURY), "scripts/publish_to_hub.py"], "cwd": str(AUGURY), "timeout": 1800},
     # sector EPS revisions and analyst actions from the lake (TickerLake's daily analyst stage fetches)
     "revisions": {"cmd": [venv_python(TICKERLAKE), "scripts/publish_to_hub.py"], "cwd": str(TICKERLAKE)},
     "analyst": "modules.analyst.job:run",  # last: reads everything the others published

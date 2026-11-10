@@ -11,7 +11,7 @@ scores.
 - Refresh data: `python run_jobs.py` (real data) / `python run_jobs.py --demo` (synthetic, no network)
 - One job only: `python run_jobs.py --only market`
 - Run the app: `streamlit run app.py`, or `python start_apps.py` for the hub plus every project's
-  full app (ports 8502-8505; `--status`, `--stop`; logs in `data/logs/apps/`). The sidebar's
+  full app (ports 8502-8506; `--status`, `--stop`; logs in `data/logs/apps/`). The sidebar's
   "Other dashboards" links go through the hidden page `views/launch.py` (`/launch?app=<port>`),
   which starts a stopped app (`core/apps.py`, shared with `start_apps.py`) and then forwards to it.
 - Tests: `python -m pytest -q` (runs the full pipeline on demo data and renders pages headlessly)
@@ -88,7 +88,7 @@ scores.
 ## Integrated projects (2026-10-26)
 Each has `scripts/publish_to_hub.py` in its own repo (on `main`, pushed 2026-10-31), run by `run_jobs.py` with that project's
 venv (see `JOBS` in `registry.py`), a read-only page `modules/<name>/page.py`, and its full app
-as a `LINKS` entry with an `app` launch spec (ports 8502-8505, started by `start_apps.py`).
+as a `LINKS` entry with an `app` launch spec (ports 8502-8506, started by `start_apps.py`).
 Publishers are thin: they call the project's own validated functions, never re-implement them.
 - **credit** (credit-spread-analyzer) -> `data/credit/`: spreads, spreads_bps, stress,
   exposure, tiers, forecast, summary.json. Runs before "market". That project stores spreads
@@ -125,6 +125,16 @@ Publishers are thin: they call the project's own validated functions, never re-i
   hub refresh gets the same day's snapshot. Rating changes were backtested there
   (`scripts/backtest_analyst_ratings.py`, 2026-11-07): the move happens before the next open;
   drift after it doesn't beat costs.
+- **augury** (augury, added 2026-11-10) -> `data/augury/`: forecast (ticker x horizon 1/5/21: VaR/ES,
+  90% price range, vol_ann, gjr_vol_ann, realised_vol_21d, iv), bands (21-day price quantiles), prices
+  (last 260 closes), track (every walk-forward forecast since 2016 with outcome: y, var_1/var_5, hit_*,
+  cov_*, crps, pit; models "augury" and, for IV tickers, "gjr"), summary.json (groups, models, iv_views,
+  per-ticker scores incl. last-250-day Basel zone, errors). The publisher downloads from Yahoo, cuts
+  partial bars (`augury.monitoring.last_final_session`, 4:15 PM New York) and extends the stored track
+  record, recomputing only ~40 trailing origins on the original refit schedule (first run ~7 min for
+  28 tickers, then ~25 s; `--rebuild` starts over, `--only SPY,QQQ` merges). The page (Risk Forecasts)
+  complements Volatility: full return distribution at 1/5/21 days and a daily VaR backtest, not a vol
+  level. Full app: augury's `dashboard/app.py` on port 8506 (any ticker, drift/vol views).
 - Projects are found next to the hub (`registry.project()`: `<name>` or `<name>/<name>`; override
   with `HUB_PROJECTS_DIR`). A job whose project or venv is missing is skipped, not failed.
 - Tests here use synthetic data in each publisher's schema; if a publisher's output changes,
