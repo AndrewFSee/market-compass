@@ -19,6 +19,18 @@ def demo_data(tmp_path, monkeypatch):
     return tmp_path
 
 
+def test_project_folder_resolution(tmp_path, monkeypatch):
+    import registry
+    monkeypatch.setattr(registry, "PROJECTS", tmp_path)
+    (tmp_path / "flat").mkdir()
+    (tmp_path / "cloned" / "cloned" / ".git").mkdir(parents=True)  # cloned into a same-name folder
+    (tmp_path / "pkg" / ".git").mkdir(parents=True)  # repo whose package shares its name
+    (tmp_path / "pkg" / "pkg").mkdir()
+    assert registry.project("flat") == tmp_path / "flat"
+    assert registry.project("cloned") == tmp_path / "cloned" / "cloned"
+    assert registry.project("pkg") == tmp_path / "pkg"
+
+
 def test_gauges_in_range(demo_data):
     from core import store
     from modules.market import config as cfg
