@@ -24,9 +24,11 @@ PROJECTS = Path(os.environ.get("HUB_PROJECTS_DIR") or Path(__file__).resolve().p
 
 def project(name: str) -> Path:
     """A project's folder: PROJECTS/<name>, or PROJECTS/<name>/<name> when it was cloned
-    into a folder of the same name."""
-    nested = PROJECTS / name / name
-    return nested if nested.is_dir() else PROJECTS / name
+    into a folder of the same name. A repo whose package shares its name (augury/augury/)
+    has its .git in the outer folder, so that one is the project."""
+    outer = PROJECTS / name
+    nested = outer / name
+    return nested if nested.is_dir() and not (outer / ".git").exists() else outer
 
 
 def venv_python(project: Path) -> str:
