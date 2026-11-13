@@ -89,14 +89,15 @@ def market_overview() -> dict:
     if "economic" in gauges:
         gauges["economic"]["release_status"] = _econ_status()
     out = {"as_of": (store.load_json("market", "meta") or {}).get("as_of"), "gauges": gauges}
-    b = store.load_frame("market", "breadth")
-    if b is not None and len(b) > 21:
-        last, wk, mo = b.iloc[-1], b.iloc[-6], b.iloc[-22]
-        out["breadth_sp500"] = {
-            "date": b.index[-1], **{f"pct_above_{n}d": last[f"above_{n}"] for n in (20, 50, 200)},
-            "pct_above_50d_1w_ago": wk["above_50"], "pct_above_50d_1m_ago": mo["above_50"],
-            "new_highs": last["new_highs"], "new_lows": last["new_lows"], "pct_advancing": last["pct_adv"],
-        }
+    for key, b in (("breadth_sp500", store.load_frame("market", "breadth")),
+                   ("breadth_nyse_all_common", store.load_frame("breadth", "nyse"))):
+        if b is not None and len(b) > 21:
+            last, wk, mo = b.iloc[-1], b.iloc[-6], b.iloc[-22]
+            out[key] = {
+                "date": b.index[-1], **{f"pct_above_{n}d": last[f"above_{n}"] for n in (20, 50, 200)},
+                "pct_above_50d_1w_ago": wk["above_50"], "pct_above_50d_1m_ago": mo["above_50"],
+                "new_highs": last["new_highs"], "new_lows": last["new_lows"], "pct_advancing": last["pct_adv"],
+            }
     r = store.load_frame("market", "etf_returns")
     if r is not None:
         from modules.market import config as mcfg

@@ -61,6 +61,7 @@ PAGES = {
         {"path": "modules/macro/page.py", "title": "Macro Regime", "icon": ":material/public:"},
         {"path": "modules/vol/page.py", "title": "Volatility", "icon": ":material/ssid_chart:"},
         {"path": "modules/augury/page.py", "title": "Risk Forecasts", "icon": ":material/query_stats:"},
+        {"path": "modules/events/page.py", "title": "Events & Odds", "icon": ":material/event:"},
     ],
     "Research": [
         {"path": "modules/analogs/page.py", "title": "Look-alikes", "icon": ":material/history:"},
@@ -93,6 +94,8 @@ LINKS = [
 JOBS = {
     # credit runs first so the market gauges pick up its spliced HY spread history
     "credit": {"cmd": [venv_python(CREDIT), "scripts/publish_to_hub.py"], "cwd": str(CREDIT)},
+    # NYSE-wide breadth from TickerLake's listed-stock bars; before market so the page and gauges can use it
+    "breadth": {"cmd": [venv_python(TICKERLAKE), "scripts/publish_breadth_to_hub.py"], "cwd": str(TICKERLAKE)},
     "market": "modules.market.job:run",
     "analogs": "modules.analogs.job:run",  # reads market + credit output, so after both
     "macro": {"cmd": [venv_python(MACRO), "scripts/publish_to_hub.py"], "cwd": str(MACRO), "timeout": 1800},
@@ -103,5 +106,7 @@ JOBS = {
     "augury": {"cmd": [venv_python(AUGURY), "scripts/publish_to_hub.py"], "cwd": str(AUGURY), "timeout": 1800},
     # sector EPS revisions and analyst actions from the lake (TickerLake's daily analyst stage fetches)
     "revisions": {"cmd": [venv_python(TICKERLAKE), "scripts/publish_to_hub.py"], "cwd": str(TICKERLAKE)},
+    # release calendar + Kalshi/Polymarket odds collected by TickerLake's econ_calendar / prediction_markets stages
+    "events": {"cmd": [venv_python(TICKERLAKE), "scripts/publish_events_to_hub.py"], "cwd": str(TICKERLAKE)},
     "analyst": "modules.analyst.job:run",  # last: reads everything the others published
 }

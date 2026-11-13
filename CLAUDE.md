@@ -135,6 +135,37 @@ Publishers are thin: they call the project's own validated functions, never re-i
   28 tickers, then ~25 s; `--rebuild` starts over, `--only SPY,QQQ` merges). The page (Risk Forecasts)
   complements Volatility: full return distribution at 1/5/21 days and a daily VaR backtest, not a vol
   level. Full app: augury's `dashboard/app.py` on port 8506 (any ticker, drift/vol views).
+- **breadth** (TickerLake, job before "market") -> `data/breadth/`: nyse (the hub's own
+  `indicators.breadth` on dividend-adjusted closes of every NYSE common stock, plus `stocks`,
+  `provisional`), summary.json. TickerLake's `listings` stage snapshots Nasdaq Trader's symbol
+  directories daily (classifies common/preferred/warrant/unit/right/note/etf); `listed_ohlcv`
+  (subclass of its ohlcv fetcher, own dataset, never the membership table) keeps bars since 2016.
+  Yahoo posts most NYSE names' daily bar hours after the close (11 of 40 at 21:30 on 11-12), so
+  the 17:30 run builds missing bars from hourly bars (source `yfinance_1h`), replaced next run.
+  Raw closes understate breadth (high-payout CEFs/REITs/MLPs): 11-12 above 20/50/200 = 50.8/47.8/
+  41.9 raw, 51.8/50.1/46.2 adjusted vs SimpleVisor 55/53/49 (S&P members 66.9/70.6/65.1). The
+  market page defaults to NYSE; gauges still use S&P member breadth.
+- **events** (TickerLake) -> `data/events/`: calendar, odds, fed, assets, other, history,
+  summary.json; page `modules/events` (Events & Odds). TickerLake `econ_calendar` (FRED release
+  dates for a curated list in its config; FOMC/ISM dates from Kalshi close times; FRED dates
+  "FOMC Press Release" every day, which is what broke SimpleVisor's calendar) and
+  `prediction_markets` (Kalshi + Polymarket public APIs, daily snapshot; `tickerlake.analytics.
+  prediction` turns ladders into implied medians). Odds history starts 2026-11-12, but both venues
+  serve past prices: Kalshi `/historical/markets` + `/historical/markets/{t}/candlesticks` (hourly
+  bid/ask; daily KXINX/KXNASDAQ100 since 2022-04, ~1,100 days) and Polymarket CLOB `prices-history`
+  (needs startTs/endTs; `interval=max` returns nothing for closed markets; gamma `/events/keyset`
+  past offset 500). Measured 2026-11-12 on Polymarket daily "Up or Down" (17 tickers, 3,888 markets
+  since 2025-10, median volume $2.7k): price at the prior close sits at ~0.50 (mean |p-0.5| 0.017)
+  and predicts nothing (slope 0.02, t 0.1); at the open it is worse than a normal model from the gap
+  and trailing vol (Brier 0.214 vs 0.202) and its deviations from that model add nothing (t 1.0).
+  Measured 2026-11-13 on Kalshi daily S&P 500 / Nasdaq-100 ranges read at 11:30 ET (899 / 865 days
+  since 2022-12; older events have no strike fields; series INX/INXD/KXINX, NASDAQ100/D/KX...):
+  ranges too wide (central 50% held the close 60% / 56% of days, 80% held 88% / 86%; partly
+  mid-quotes of empty-bid buckets). Size of the rest-of-day move: Kalshi IQR rank corr 0.35, about
+  VIX1D at 11:30 (0.37, QLIKE -10.12 vs -10.07) and adds nothing beyond it (t 1.2 vs 2.6); beats VIX
+  and VXN prev close. Direction (median vs Yahoo 11:30 level, ~680 days): S&P slope +0.5 (t 1.2),
+  Nasdaq -0.1 (t -1.2). Kalshi minute candles exist only for minutes with a change; historical
+  per-market candles use `close`, live ones `close_dollars`; ~4 requests/s.
 - Projects are found next to the hub (`registry.project()`: `<name>` or `<name>/<name>`; override
   with `HUB_PROJECTS_DIR`). A job whose project or venv is missing is skipped, not failed.
 - Tests here use synthetic data in each publisher's schema; if a publisher's output changes,
@@ -194,7 +225,8 @@ Publishers are thin: they call the project's own validated functions, never re-i
 - FMP (checked 2026-11-07): no fund-flow endpoint; analyst estimates are current consensus only
   (Starter: annual, US); Starter has historical analyst grades for US stocks, which Yahoo also
   serves free (TickerLake `analyst_ratings`), so there is nothing to backtest before buying.
-- Possible additions: put/call ratio component, true NYSE A/D data, 52-week high/low
+- Test whether gauges built on NYSE breadth track SimpleVisor better than S&P member breadth.
+- Possible additions: put/call ratio component, 52-week high/low
   history panel, sector/factor relative-strength analysis page, alerts when a gauge
   crosses a band.
 

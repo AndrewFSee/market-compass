@@ -45,13 +45,14 @@ Market Compass is two things:
 | Page | Needs | What it shows |
 |---|---|---|
 | **Home** | - | Data freshness for every module, and everything registered with the hub |
-| **Market Environment** | this repo | Fear/Greed, Liquidity, Technical and Economic regime gauges, each with a trend, a history chart against the S&P 500 and a measured link to next-period returns. Also S&P 500 breadth, a style/size grid, sector and factor tiles, a sector/style/factor rotation map with overbought/oversold readings vs SPY, and an S&P 500 / Nasdaq 100 market map. |
+| **Market Environment** | this repo | Fear/Greed, Liquidity, Technical and Economic regime gauges, each with a trend, a history chart against the S&P 500 and a measured link to next-period returns. Also NYSE-wide and S&P 500 breadth, a style/size grid, sector and factor tiles, a sector/style/factor rotation map with overbought/oversold readings vs SPY, and an S&P 500 / Nasdaq 100 market map. |
 | **Look-alikes** | this repo | The 15 most similar past market states since 1997 and what the S&P 500 did next, with the method's own walk-forward track record |
 | **Analyst** | this repo + Anthropic API key | A daily brief written by Claude from the hub's data, and a chat for follow-up questions |
 | **Credit** | [credit-spread-analyzer](https://github.com/AndrewFSee/credit-spread-analyzer) | Credit-stress regime, spread forecast, rating tiers, CCC-B decompression, Fed liquidity |
 | **Macro Regime** | [macro-regime-nowcaster](https://github.com/AndrewFSee/macro-regime-nowcaster) | Recession probability (point-in-time history since 1967), GDP nowcast, latent macro factors |
 | **Volatility** | [stochastic-vol-surface](https://github.com/AndrewFSee/stochastic-vol-surface) | VIX family, implied vol by ticker (skew, term slope, variance risk premium), 21-day vol forecasts |
 | **Tail Risk** | [tail-risk-scenario-engine](https://github.com/AndrewFSee/tail-risk-scenario-engine) | 21-day VaR/CVaR from 20,000 simulated paths, hedges, CVaR-optimal weights, stress scenarios |
+| **Events & Odds** | [TickerLake](https://github.com/AndrewFSee/TickerLake) | The US release calendar with what Kalshi and Polymarket price for each number, the Fed path meeting by meeting, and index and single-stock prediction markets |
 | **Risk Forecasts** | [augury](https://github.com/AndrewFSee/augury) | Per-ticker 1/5/21-day return distributions (VaR, ES, price ranges, forecast vol) for 28 ETFs and stocks, with a daily out-of-sample VaR track record since 2016 |
 
 The first three pages work with this repository alone. Each companion page reads what
@@ -71,7 +72,8 @@ tests and Streamlit apps. The hub only needs each one's `scripts/publish_to_hub.
 | [**stochastic-vol-surface**](https://github.com/AndrewFSee/stochastic-vol-surface) | `data/vol/`: surface features per ticker, VIX/MOVE/OVX history, forecasts with outcomes | Its publisher makes no network calls. It reads what the project's own daily option-chain scraper collected, so run that scraper on a schedule (see its README). The page flags missed sessions. |
 | [**tail-risk-scenario-engine**](https://github.com/AndrewFSee/tail-risk-scenario-engine) | `data/tailrisk/`: return fan, P&L histogram, VaR/CVaR, hedges, optimiser, stress scenarios | The portfolio and scenarios come from its `configs/default.yaml` and `configs/scenarios/`. |
 | [**augury**](https://github.com/AndrewFSee/augury) | `data/augury/`: forecast table, 21-day price bands, recent prices, every past forecast with its outcome, track-record scores | Downloads prices from Yahoo. The first run scores every day since 2016 for 28 tickers (about 7 minutes); after that it recomputes only the last few weeks (under a minute). |
-| [**TickerLake**](https://github.com/AndrewFSee/TickerLake) | `data/revisions/`: sector EPS-estimate revisions and analyst rating actions | A data lake with its own daily scheduled run; its `analyst` stage snapshots Yahoo's consensus for every S&P 500 member. Its publisher reads only the lake. Yahoo keeps no estimate history, so the history starts when you start collecting. |
+| [**TickerLake**](https://github.com/AndrewFSee/TickerLake) | `data/revisions/`: sector EPS-estimate revisions and analyst rating actions | A data lake with its own daily scheduled run; its `analyst` stage snapshots Yahoo's consensus for every S&P 500 member. Its publishers read only the lake. Yahoo keeps no estimate history, so the history starts when you start collecting. |
+| [**TickerLake**](https://github.com/AndrewFSee/TickerLake) (same repo) | `data/breadth/`: NYSE-wide breadth; `data/events/`: release calendar and prediction-market odds | Its `listings` and `listed_ohlcv` stages keep daily bars for every NYSE common stock (one-time `tickerlake backfill listed_ohlcv`, about 13 minutes). `econ_calendar` (needs a FRED key) and `prediction_markets` (Kalshi and Polymarket, no keys) snapshot the calendar and odds daily. |
 
 ## Quick start (hub only)
 
@@ -189,9 +191,10 @@ implying a signal.
 
 ![Gauges vs the S&P 500: coincident and next-period correlations, and S&P returns by Fear/Greed band](docs/screenshots/market-vs-spy.png)
 
-**Breadth, style and sectors.** The breadth panel covers:
+**Breadth, style and sectors.** The breadth panel covers either all NYSE common stocks
+(about 2,200, from TickerLake) or the S&P 500 members:
 
-- advancing vs declining S&P 500 members, with a cumulative A/D line;
+- advancing vs declining stocks, with a cumulative A/D line;
 - the share of members above their 20-, 50- and 200-day averages;
 - new 52-week highs and lows.
 
@@ -353,6 +356,22 @@ the only assets where that was shown to help. The page shows:
 
 The Volatility page forecasts the level of 21-day vol; this one forecasts the whole return
 distribution at short horizons, so the two complement each other.
+
+### Events & Odds
+
+From TickerLake. The economic calendar lists the next three weeks of US releases (FRED's
+release calendar, curated; FOMC and ISM dates from Kalshi) with what the prediction markets
+price for each number:
+
+- **Kalshi ladders** ("CPI above 0.2%", "above 0.3%", ...) give an implied median, the
+  level with even odds of being exceeded, and a chart of the whole ladder;
+- **named outcomes** (Fed decisions, Polymarket's buckets) give each outcome's probability;
+- **the Fed path:** P(cut / hold / hike) at every meeting on both venues;
+- **indices and stocks:** Kalshi's S&P 500 and Nasdaq-100 ranges, and Polymarket's
+  close-above and touch ladders for SPY and about 20 stocks, against the last close.
+
+Odds are snapshotted daily, so each release's implied median gets a history. These are the
+markets' prices, not forecasts the dashboard has tested.
 
 ### Home
 

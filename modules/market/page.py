@@ -22,6 +22,16 @@ def load(name: str, kind: str = "frame"):
     return _cached(name, kind, store.stamp(MODULE, name))
 
 
+@st.cache_data(show_spinner=False)
+def _cached_other(module: str, name: str, kind: str, stamp):
+    return store.load_json(module, name) if kind == "json" else store.load_frame(module, name)
+
+
+def load_other(module: str, name: str, kind: str = "frame"):
+    """Another module's output (here: what TickerLake's publisher wrote)."""
+    return _cached_other(module, name, kind, store.stamp(module, name))
+
+
 def _fmt(v, digits=2):
     return "—" if v is None or pd.isna(v) else f"{v:,.{digits}f}"
 
@@ -193,11 +203,16 @@ if links:
 # ================================================================= breadth & style
 st.subheader("Breadth & style")
 left, right = st.columns([1, 1.2])
-breadth = load("breadth")
+breadth_by = {"NYSE": load_other("breadth", "nyse"), "S&P 500": load("breadth")}
+breadth_by = {k: v for k, v in breadth_by.items() if v is not None and not v.empty}
 
 with left, st.container(border=True):
-    st.markdown("**Market breadth** · S&P 500 members")
-    if breadth is None or breadth.empty:
+    t, c = st.columns([1.3, 1], vertical_alignment="center")
+    t.markdown("**Market breadth**")
+    with c:
+        universe = ui.choice("Universe", list(breadth_by) or ["S&P 500"], key="breadth_universe")
+    breadth = breadth_by.get(universe)
+    if breadth is None:
         st.info("No breadth data.")
     else:
         last = breadth.iloc[-1]
@@ -248,7 +263,17 @@ with left, st.container(border=True):
             fig.update_layout(height=230, barmode="relative", margin={"l": 0, "r": 0, "t": 10, "b": 0},
                               legend={"orientation": "h", "y": 1.1})
             ui.chart(fig, key="highs_lows")
-        st.caption(f"As of {breadth.index[-1]:%b %d, %Y}")
+        if universe == "NYSE":
+            prov = int(last.get("provisional", 0) or 0)
+            st.caption(f"All {int(last.stocks):,} NYSE common stocks (ADRs, REITs and closed-end funds included; "
+                       f"preferreds, notes and ETFs not), as of {breadth.index[-1]:%b %d, %Y}."
+                       + (f" {prov:,} of the latest closes are provisional (last trade before 4 PM), replaced "
+                          "by the official close the next evening." if prov else "")
+                       + " History before collection began covers only stocks still listed, which flatters "
+                         "it a little.")
+        else:
+            st.caption(f"S&P 500 members, as of {breadth.index[-1]:%b %d, %Y}. Large caps only: their breadth "
+                       "runs well above the NYSE's in a market led by big stocks.")
 
 etf_returns = load("etf_returns")
 with right, st.container(border=True):
@@ -659,14 +684,6 @@ with st.container(border=True):
                 flows_evidence(flows_sum["stats"])
 
 # ================================================================= estimate revisions
-@st.cache_data(show_spinner=False)
-def _cached_other(module: str, name: str, kind: str, stamp):
-    return store.load_json(module, name) if kind == "json" else store.load_frame(module, name)
-
-
-def load_other(module: str, name: str, kind: str = "frame"):
-    """Another module's output (here: what TickerLake's publisher wrote)."""
-    return _cached_other(module, name, kind, store.stamp(module, name))
 
 
 st.markdown("##### Estimate revisions & analyst actions")

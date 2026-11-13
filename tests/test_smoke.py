@@ -755,6 +755,29 @@ def test_flows_on_demo(demo_data):
     assert not store.load_frame("market", "flows_history").empty
 
 
+def test_market_page_with_nyse_breadth(demo_data):
+    """TickerLake's breadth publisher output (fake, same schema: the hub's breadth() plus stocks and
+    provisional) shows as the default universe, and the S&P 500 view is still one click away."""
+    import numpy as np
+    from streamlit.testing.v1 import AppTest
+    from core import store
+    from modules.market import indicators as ind
+    days = pd.bdate_range("2025-01-02", periods=300)
+    rng = np.random.default_rng(3)
+    closes = pd.DataFrame(100 * np.exp(rng.normal(0, 0.01, (300, 40)).cumsum(axis=0)), index=days,
+                          columns=[f"S{i}" for i in range(40)])
+    nyse = ind.breadth(closes)
+    nyse["stocks"] = 40
+    nyse["provisional"] = 0
+    nyse.loc[nyse.index[-1], "provisional"] = 12
+    store.save_frame("breadth", "nyse", nyse)
+    page = AppTest.from_file(str(ROOT / "modules" / "market" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    assert any("NYSE common stocks" in c.value and "12 of the latest closes" in c.value for c in page.caption)
+    from modules.analyst import tools
+    assert tools.market_overview()["breadth_nyse_all_common"]["pct_advancing"] is not None
+
+
 def test_market_page_with_revisions(demo_data):
     """TickerLake's publisher output (fake, same schema) shows on the market page."""
     from streamlit.testing.v1 import AppTest
@@ -777,3 +800,68 @@ def test_market_page_with_revisions(demo_data):
     page = AppTest.from_file(str(ROOT / "modules" / "market" / "page.py"), default_timeout=60).run()
     assert not page.exception, page.exception
     assert any("Estimate revisions" in m.value for m in page.markdown)
+
+
+def _fake_events(store):
+    """TickerLake's publish_events_to_hub.py output (fake, same schema)."""
+    import json
+    day = pd.Timestamp("2026-11-12")
+    cal = pd.DataFrame({"release_date": [pd.Timestamp("2026-11-13").date(), pd.Timestamp("2026-11-25").date()],
+                        "time_et": ["08:30", "14:00"], "name": ["PPI", "FOMC rate decision"],
+                        "importance": ["medium", "high"], "release_key": ["ppi", "fomc"]})
+    base = {"close_time": pd.Timestamp("2026-11-13T13:29:00Z"), "volume_24h": 10.0, "below_range": False,
+            "above_range": False, "pct": True}
+    odds = pd.DataFrame([
+        {**base, "release_key": "ppi", "release_date": cal["release_date"][0], "venue": "kalshi", "series": "KXUSPPI",
+         "event_id": "KXUSPPI-26OCT", "event_title": "PPI MoM in October", "volume": 1000.0, "url": "https://kalshi.com",
+         "kind": "ladder", "median": 0.42, "top": None, "top_prob": None,
+         "detail": json.dumps({"strikes": [0.2, 0.4, 0.6], "p_above": [0.9, 0.55, 0.1]})},
+        {**base, "release_key": "fomc", "release_date": cal["release_date"][1], "venue": "polymarket",
+         "series": "fed-rates", "event_id": "fed-dec", "event_title": "Fed Decision in December?", "volume": 5e6,
+         "url": "https://polymarket.com", "kind": "outcomes", "median": None, "top": "25 bps increase",
+         "top_prob": 0.88, "pct": False,
+         "detail": json.dumps({"outcomes": ["25 bps increase", "No change"], "probs": [0.88, 0.12]})},
+    ])
+    assets = pd.DataFrame([
+        {**base, "underlying": "SPY", "venue": "polymarket", "series": "stocks", "event_id": "spy-week",
+         "event_title": "What will S&P 500 (SPY) hit Week of November 9 2026?", "volume": 3000.0,
+         "url": "https://polymarket.com", "kind": "touch", "median": None, "top": None, "top_prob": None, "pct": False,
+         "detail": json.dumps({"up": [[770.0, 0.07]], "down": [[740.0, 0.2]]})},
+        {**base, "underlying": "SPY", "venue": "polymarket", "series": "stocks", "event_id": "spy-close",
+         "event_title": "S&P 500 (SPY) closes above ___ on November 13?", "volume": 2000.0,
+         "url": "https://polymarket.com", "kind": "ladder", "median": 759.9, "top": None, "top_prob": None,
+         "pct": False, "detail": json.dumps({"strikes": [750.0, 760.0, 770.0], "p_above": [0.8, 0.5, 0.1]})},
+    ])
+    fed = pd.DataFrame({"meeting": [pd.Timestamp("2026-12-09").date()] * 2, "venue": ["kalshi", "polymarket"],
+                        "event_id": ["k", "p"], "event_title": "Fed", "url": "u", "cut": [0.01, 0.005],
+                        "hold": [0.03, 0.02], "hike": [0.96, 0.975], "volume": [1e7, 3e7]})
+    other = assets.iloc[:0].assign(event_title=["US recession by end of 2026?"], kind=["binary"], top=["Yes"],
+                                   top_prob=[0.02], volume_24h=[2e4], url=["https://polymarket.com"])
+    history = pd.DataFrame({"snapshot_date": [day.date(), (day + pd.Timedelta(days=1)).date()], "venue": "kalshi",
+                            "event_id": "KXUSPPI-26OCT", "median": [0.40, 0.42], "top": None, "top_prob": None})
+    for name, df in {"calendar": cal, "odds": odds, "assets": assets, "fed": fed, "other": other,
+                     "history": history}.items():
+        store.save_frame("events", name, df)
+    store.save_json("events", "summary", {"snapshot_date": "2026-11-12", "snapshots": 2, "first_snapshot": "2026-11-12",
+                                          "releases": 2, "matched_events": 2, "asset_events": 2})
+
+
+def test_events_page(demo_data):
+    from streamlit.testing.v1 import AppTest
+    from core import store
+    _fake_events(store)
+    page = AppTest.from_file(str(ROOT / "modules" / "events" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    cal = page.dataframe[0].value
+    assert "K PPI m/m: median +0.42%" in set(cal["Markets say"])
+    assert "PM Fed Decision in December: 25 bps increase (88%)" in set(cal["Markets say"])
+    page.selectbox[0].set_value(page.selectbox[0].options[1]).run()  # the Fed detail: outcome bars
+    assert not page.exception, page.exception
+    assert any("from the last close" in m.value for m in page.markdown)  # SPY ladder vs the hub's last price
+
+
+def test_events_page_without_data(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "events" / "page.py"), default_timeout=60).run()
+    assert not page.exception and page.info
