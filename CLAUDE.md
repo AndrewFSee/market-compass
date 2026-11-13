@@ -61,7 +61,12 @@ scores.
   next-4-week winners reliably (best: 12-1 momentum, IC +0.03-0.08, t <= 2); clockwise
   motion is mostly arithmetic (momentum = change in trend); sectors at relative RSI >= 70
   trailed the group ~0.4% over 4 weeks in both halves (55% hit). The page's expander states
-  this from the numbers; keep it that way if the recipe changes.
+  this from the numbers; keep it that way if the recipe changes. Measured 2026-11-13 (scratch
+  script, not in the job): an equal-weight vote of 22 standard daily signals (price vs SMA
+  20/50/100/200, SMA crosses and slopes, MACD, RSI-14, Williams %R-36, recent MA crosses), on price
+  and on the ETF/SPY ratio, 12 sector ETFs since 2000, 338 non-overlapping 4-week periods: IC vs
+  next-4-week return over SPY -0.02 (t -0.9; ~0 in both halves); top-3 minus bottom-3 -0.24% per
+  4 weeks (t -1.1); sectors with relative vote > +0.3 did no better than the middle.
 - Sector internals / leadership / cross-asset (`job.sector_internals`, `leadership`, `cross_asset`;
   settings `INTERNALS_*`, `CONTRIBUTION_WINDOWS`, `LEADERSHIP_WEEKS`, `CROSS_ASSET*`): S&P 500 members
   mapped to sector ETFs by GICS (`GICS_TO_ETF`); weights = today's cap with share count held
@@ -143,12 +148,13 @@ Publishers are thin: they call the project's own validated functions, never re-i
   Yahoo posts most NYSE names' daily bar hours after the close (11 of 40 at 21:30 on 11-12), so
   the 17:30 run builds missing bars from hourly bars (source `yfinance_1h`), replaced next run.
   Raw closes understate breadth (high-payout CEFs/REITs/MLPs): 11-12 above 20/50/200 = 50.8/47.8/
-  41.9 raw, 51.8/50.1/46.2 adjusted vs SimpleVisor 55/53/49 (S&P members 66.9/70.6/65.1). The
+  41.9 raw, 51.8/50.1/46.2 adjusted (S&P members 66.9/70.6/65.1; the comparison with the trial
+  service's readings lives in git-ignored `data/simplevisor/`). The
   market page defaults to NYSE; gauges still use S&P member breadth.
 - **events** (TickerLake) -> `data/events/`: calendar, odds, fed, assets, other, history,
   summary.json; page `modules/events` (Events & Odds). TickerLake `econ_calendar` (FRED release
   dates for a curated list in its config; FOMC/ISM dates from Kalshi close times; FRED dates
-  "FOMC Press Release" every day, which is what broke SimpleVisor's calendar) and
+  "FOMC Press Release" every day, so a calendar built from FRED alone lists FOMC daily) and
   `prediction_markets` (Kalshi + Polymarket public APIs, daily snapshot; `tickerlake.analytics.
   prediction` turns ladders into implied medians). Odds history starts 2026-11-12, but both venues
   serve past prices: Kalshi `/historical/markets` + `/historical/markets/{t}/candlesticks` (hourly
