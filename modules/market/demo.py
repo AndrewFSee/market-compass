@@ -13,13 +13,16 @@ _FRED_SHAPES = {
     "D": {"BAMLH0A0HYM2": (4.0, 0.03, "ar"), "BAMLC0A0CM": (1.3, 0.015, "ar"),
           "DGS2": (3.0, 0.04, "ar"), "DGS10": (4.2, 0.03, "ar"), "DFII10": (1.0, 0.03, "ar"),
           "RRPONTSYD": (300, 0.03, "pos"),
-          "DTWEXBGS": (115, 0.003, "pos"), "T10Y3M": (0.8, 0.03, "ar"), "BAA10Y": (2.2, 0.02, "ar")},
+          "DTWEXBGS": (115, 0.003, "pos"), "T10Y3M": (0.8, 0.03, "ar"), "BAA10Y": (2.2, 0.02, "ar"),
+          "DFEDTARL": (3.75, 0.002, "ar")},
     "W": {"WALCL": (7.0e6, 0.004, "pos"), "WTREGEN": (7.5e5, 0.04, "pos"), "WRESBAL": (3200, 0.01, "pos"),
           "NFCI": (-0.4, 0.05, "ar"), "ICSA": (230e3, 0.03, "pos"), "CCSA": (1.8e6, 0.02, "pos")},
     "M": {"PERMIT": (1450, 0.03, "pos"), "HOUST": (1350, 0.04, "pos"), "AWHMAN": (40.5, 0.004, "pos"),
           "NEWORDER": (70e3, 0.012, "pos"), "ACOGNO": (40e3, 0.012, "pos"), "DGORDER": (280e3, 0.015, "pos"),
           "UMCSENT": (75, 0.05, "pos"), "M2REAL": (7e3, 0.004, "pos"), "TOTALSA": (16, 0.03, "pos"),
-          "TEMPHELPS": (2800, 0.01, "pos"), "USALOLITOAASTSAM": (100, 0.003, "pos")},
+          "TEMPHELPS": (2800, 0.01, "pos"), "USALOLITOAASTSAM": (100, 0.003, "pos"),
+          "UNRATE": (4.1, 0.01, "ar"), "PAYEMS": (159e3, 0.001, "pos"), "CPIAUCNS": (320, 0.002, "pos"),
+          "CPILFENS": (325, 0.002, "pos"), "PCEPILFE": (125, 0.0018, "pos")},
     "Q": {"GDPC1": (20e3, 0.006, "pos")},
 }
 _FREQ = {"D": "B", "W": "W-WED", "M": "MS", "Q": "QS"}
@@ -74,12 +77,15 @@ def generate(seed: int = 7) -> dict:
         if freq == "M":  # monthly data trickles in: the latest month is only partly reported
             idx = idx[:-1]
         for sid, (level, vol, kind) in specs.items():
-            drift = 0.006 if sid == "GDPC1" else 0.0
+            drift = {"GDPC1": 0.006, "PAYEMS": 0.001, "CPIAUCNS": 0.002, "CPILFENS": 0.002,
+                     "PCEPILFE": 0.0018}.get(sid, 0.0)
             fred[sid] = pd.Series(_walk(rng, len(idx), level, vol, kind, drift), index=idx, name=sid)
+    fred["DFEDTARU"] = fred["DFEDTARL"] + 0.25
     # leave a few late reporters out of the last month so the coverage logic is exercised
     for sid in ("NEWORDER", "ACOGNO", "DGORDER", "TOTALSA", "M2REAL"):
         fred[sid] = fred[sid].iloc[:-1]
 
+    global_prices = pd.DataFrame({t: asset(rng.uniform(0.0, 1.2), 0.008) for t in cfg.global_tickers()}, index=days)
     commodities = pd.DataFrame({t: asset(0.3, 0.02) for t in cfg.cross_asset_yahoo()}, index=days)
     rotation_prices = etf[cfg.rotation_tickers()].join(commodities)
     ssga = []
@@ -87,6 +93,6 @@ def generate(seed: int = 7) -> dict:
         shares = 2e8 * np.exp(np.cumsum(rng.normal(0, 0.004, n)))
         ssga.append(pd.DataFrame({"date": days, "ticker": t, "nav": etf[t].to_numpy(), "shares": shares,
                                   "tna": shares * etf[t].to_numpy()}))
-    return {"fred": fred, "etf": etf, "rotation_prices": rotation_prices, "ssga": pd.concat(ssga, ignore_index=True),
+    return {"fred": fred, "etf": etf, "rotation_prices": rotation_prices, "global_prices": global_prices, "ssga": pd.concat(ssga, ignore_index=True),
             "constituents": constituents,
             "stocks": stocks, "caps": caps, "missing": [], "demo": True}

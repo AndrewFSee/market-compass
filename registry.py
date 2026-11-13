@@ -50,6 +50,7 @@ VOL = project("stochastic-vol-surface")
 TAILRISK = project("tail-risk-scenario-engine")
 TICKERLAKE = project("TickerLake")
 AUGURY = project("augury")
+SENTIQ = project("SentIQ")
 
 PAGES = {
     "Hub": [
@@ -62,6 +63,8 @@ PAGES = {
         {"path": "modules/vol/page.py", "title": "Volatility", "icon": ":material/ssid_chart:"},
         {"path": "modules/augury/page.py", "title": "Risk Forecasts", "icon": ":material/query_stats:"},
         {"path": "modules/events/page.py", "title": "Events & Odds", "icon": ":material/event:"},
+        {"path": "modules/style/page.py", "title": "Value & Growth", "icon": ":material/scatter_plot:"},
+        {"path": "modules/buybacks/page.py", "title": "Buybacks", "icon": ":material/currency_exchange:"},
     ],
     "Research": [
         {"path": "modules/analogs/page.py", "title": "Look-alikes", "icon": ":material/history:"},
@@ -108,5 +111,13 @@ JOBS = {
     "revisions": {"cmd": [venv_python(TICKERLAKE), "scripts/publish_to_hub.py"], "cwd": str(TICKERLAKE)},
     # release calendar + Kalshi/Polymarket odds collected by TickerLake's econ_calendar / prediction_markets stages
     "events": {"cmd": [venv_python(TICKERLAKE), "scripts/publish_events_to_hub.py"], "cwd": str(TICKERLAKE)},
+    # value / growth scores of S&P 500 members from SEC filings in the lake, plus their backtest (~3 min)
+    "style": {"cmd": [venv_python(TICKERLAKE), "scripts/publish_style_to_hub.py"], "cwd": str(TICKERLAKE)},
+    # repurchases from SEC filings + estimated blackout windows (release dates: TickerLake backfill_earnings_releases.py)
+    "buybacks": {"cmd": [venv_python(TICKERLAKE), "scripts/publish_buybacks_to_hub.py"], "cwd": str(TICKERLAKE)},
+    # buyback announcements: SentIQ finds candidate 8-K passages in what it already collected (no SEC calls),
+    # then Claude classifies each new filing once (modules/buybacks/news.py; ~$0.01 a filing)
+    "buyback_news": {"cmd": [venv_python(SENTIQ), "scripts/publish_buyback_candidates_to_hub.py"], "cwd": str(SENTIQ)},
+    "buyback_news_classify": "modules.buybacks.news:run",
     "analyst": "modules.analyst.job:run",  # last: reads everything the others published
 }

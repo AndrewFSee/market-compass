@@ -865,3 +865,242 @@ def test_events_page_without_data(tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
     page = AppTest.from_file(str(ROOT / "modules" / "events" / "page.py"), default_timeout=60).run()
     assert not page.exception and page.info
+
+
+def _fake_style(store):
+    """TickerLake's publish_style_to_hub.py output (fake, same schema)."""
+    import numpy as np
+    rng = np.random.default_rng(5)
+    sectors = ["Information Technology", "Energy", "Financials", "Utilities"]
+    syms = [f"S{i}" for i in range(40)]
+    sec_of = {s: sectors[i % 4] for i, s in enumerate(syms)}
+    factors = ["bp", "ep", "sp", "dp", "epsg3", "spsg3", "inv", "roa"]
+    dates = list(pd.date_range("2025-11-28", periods=12, freq="BME")) + [pd.Timestamp("2026-11-12")]
+    stocks = pd.DataFrame({"symbol": syms, "name": [f"{s} Inc" for s in syms], "sector": [sec_of[s] for s in syms],
+                           "mcap": rng.lognormal(24, 1, 40), "value": rng.normal(size=40), "growth": rng.normal(size=40),
+                           **{f: rng.normal(0.05, 0.02, 40) for f in factors},
+                           **{f"z_{f}": rng.normal(size=40) for f in factors}})
+    stocks.loc[3, ["value", "growth"]] = np.nan
+    stocks["quadrant"] = np.where(stocks.value > 0, np.where(stocks.growth > 0, "cheap, growing", "cheap, slow"),
+                                  np.where(stocks.growth > 0, "pricey, growing", "pricey, slow"))
+    stocks.loc[3, "quadrant"] = None
+    hist = pd.DataFrame([{"date": d, "symbol": s, "value": rng.normal(), "growth": rng.normal()}
+                         for d in dates[:-1] for s in syms])
+    sec = pd.DataFrame([{"date": d, "sector": g, "value": rng.normal(0, 0.3), "growth": rng.normal(0, 0.3),
+                         "mcap": 1e12, "stocks": 10} for d in dates for g in sectors])
+    store.save_frame("style", "stocks", stocks)
+    store.save_frame("style", "stock_history", hist)
+    store.save_frame("style", "sectors", sec)
+    one = {"mean": 0.003, "t": 0.2, "n": 160, "first": 0.004, "first_t": 0.2, "second": 0.001, "second_t": 0.1}
+    tilt = {**one, "mean": 0.11, "t": 1.9, "first": 0.1, "second": 0.12}
+    store.save_json("style", "summary", {
+        "as_of": "2026-11-12", "members": 503, "priced": 500, "scored": 454, "history_start": "2012-12-31",
+        "value_factors": factors[:4], "growth_factors": factors[4:], "caps_from_hub": True,
+        "quadrants": {"cheap, growing": 50}, "backtest": {
+            "start": "2012-12-31", "end": "2026-10-30", "months": 167, "split": "2020-01-01", "members_min": 353,
+            "members_max": 503, "stock": {k: {"1m": one, "3m": one} for k in ("value", "growth")},
+            "factors": {f: {"1m": one, "3m": one} for f in factors},
+            "quintile": {k: one for k in ("value", "growth")}, "corner": {**one, "share": 0.11},
+            "sector": {k: {"1m": one, "3m": tilt} for k in ("value", "growth")}, "sectors": 11}})
+
+
+def test_style_page(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    from core import store
+    _fake_style(store)
+    page = AppTest.from_file(str(ROOT / "modules" / "style" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    text = " ".join(m.value for m in page.markdown)
+    assert "neither score ranks future returns" in text and "rather than a tested edge" in text
+    page.toggle[0].set_value(True).run()                       # sector paths
+    page.selectbox[1].set_value("Energy").run()                # stocks of one sector
+    page.multiselect[0].set_value(["cheap, growing"]).run()
+    assert not page.exception, page.exception
+
+
+def test_style_page_without_data(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "style" / "page.py"), default_timeout=60).run()
+    assert not page.exception and page.info
+
+
+def test_market_snapshot_math():
+    from modules.market import indicators as ind
+    days = pd.bdate_range("2025-01-01", "2026-11-13")
+    s = pd.Series(range(1, len(days) + 1), index=days, dtype=float)      # rises 1 a day
+    snap = ind.market_snapshot(s.to_frame("X")).loc["X"]
+    last = s.iloc[-1]
+    assert snap["1D"] == pytest.approx((last / (last - 1) - 1) * 100)
+    assert snap["YTD"] == pytest.approx((last / s[:"2025-12-31"].iloc[-1] - 1) * 100)
+    assert snap["range_pos"] == pytest.approx(100) and bool(snap["sma200_rising"])
+    assert snap["rsi14"] == pytest.approx(100) and len(snap["spark"]) == 52
+    assert snap["vs_50d"] == pytest.approx((last / s.tail(50).mean() - 1) * 100)
+
+
+def test_headline_econ_transforms():
+    from modules.market import indicators as ind
+    months = pd.date_range("2024-01-01", periods=24, freq="MS")
+    days = pd.bdate_range("2026-09-01", "2026-11-13")
+    fred = {"CPI": pd.Series([100 * 1.003 ** i for i in range(24)], index=months),
+            "PAY": pd.Series([1000.0 + 50 * i for i in range(24)], index=months),
+            "GDP": pd.Series([100.0, 101.0], index=pd.to_datetime(["2026-04-01", "2026-07-01"])),
+            "LO": pd.Series(3.75, index=days), "HI": pd.Series(4.0, index=days),
+            "Y10": pd.Series(4.5, index=days), "Y2": pd.Series(4.0, index=days)}
+    specs = [{"key": "cpi", "series": ["CPI"], "kind": "yoy", "unit": "%"},
+             {"key": "pay", "series": ["PAY"], "kind": "mom_diff", "unit": "k"},
+             {"key": "gdp", "series": ["GDP"], "kind": "saar", "unit": "%"},
+             {"key": "ff", "series": ["LO", "HI"], "kind": "range", "unit": "%", "up_is_good": None},
+             {"key": "curve", "series": ["Y10", "Y2"], "kind": "spread", "unit": "pts"},
+             {"key": "gone", "series": ["NOPE"], "kind": "level", "unit": "%"}]
+    out = {h["key"]: h for h in ind.headline_econ(fred, specs)}
+    assert out["cpi"]["value"] == pytest.approx((1.003 ** 12 - 1) * 100) and out["cpi"]["freq"] == "monthly"
+    assert out["pay"]["value"] == 50 and out["pay"]["change"] == 0
+    assert out["gdp"]["value"] == pytest.approx((1.01 ** 4 - 1) * 100) and out["gdp"]["freq"] == "quarterly"
+    assert (out["ff"]["low"], out["ff"]["value"], out["ff"]["freq"]) == (3.75, 4.0, "daily")
+    assert out["ff"]["up_is_good"] is None and out["curve"]["value"] == pytest.approx(0.5)
+    assert out["gone"]["value"] is None
+
+
+def test_market_page_shows_economy_and_global_markets(demo_data):
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "market" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    heads = [h.value for h in page.subheader]
+    assert "Economy at a glance" in heads and "Global markets" in heads
+    assert any(m.label.startswith("Core CPI, y/y") for m in page.metric)
+
+
+def _fake_buybacks(store):
+    """TickerLake's publish_buybacks_to_hub.py output (fake, same schema)."""
+    import numpy as np
+    today = pd.Timestamp("2026-11-12")
+    n = 6
+    stocks = pd.DataFrame({
+        "symbol": [f"S{i}" for i in range(n)], "name": [f"S{i} Inc" for i in range(n)],
+        "sector": ["Information Technology", "Energy"] * 3, "quarter_end": pd.Timestamp("2026-09-30"),
+        "repurchased_q": 1e9, "repurchased_ttm": [4e9, 2e9, np.nan, 1e9, 3e9, 0.0], "known": today,
+        "share_change_1y": [-0.02, -0.01, np.nan, 0.01, -0.03, 0.0], "remaining_auth": [5e9, np.nan, 1e9, 2e9, 3e9, np.nan],
+        "remaining_as_of": pd.Timestamp("2026-09-30"),
+        "auth_added_reported": [pd.Timestamp("2026-08-01"), pd.NaT, pd.NaT, pd.NaT, pd.NaT, pd.NaT],
+        "blackout": [True, False, True, False, False, True],
+        "reopens": [today + pd.Timedelta(days=5), pd.NaT, today + pd.Timedelta(days=40), pd.NaT, pd.NaT,
+                    today + pd.Timedelta(days=3)],
+        "next_shut": [pd.Timestamp("2027-03-17"), pd.Timestamp("2026-12-17"), pd.NaT, pd.Timestamp("2026-12-17"), pd.NaT,
+                      pd.Timestamp("2027-03-17")],
+        "next_release": today + pd.Timedelta(days=3), "release_source": ["calendar", "estimated"] * 3,
+        "window_release": today + pd.Timedelta(days=1), "window_source": "calendar",
+        "mcap": [1e11, 5e10, 2e10, 1e10, 8e10, 3e10]})
+    stocks["buyback_yield"] = stocks.repurchased_ttm / stocks.mcap
+    stocks["remaining_pct_cap"] = stocks.remaining_auth / stocks.mcap
+    days = pd.bdate_range("2025-01-02", today + pd.Timedelta(days=90))
+    share = pd.DataFrame({"date": days, "share_count": np.linspace(0.1, 0.9, len(days)) % 1,
+                          "share_cap": np.linspace(0.2, 0.8, len(days)), "projected": days > today})
+    store.save_frame("buybacks", "stocks", stocks)
+    store.save_frame("buybacks", "blackout_share", share)
+    store.save_json("buybacks", "summary", {
+        "as_of": "2026-11-12", "members": 503, "with_buybacks": 5, "buybacks_ttm": 1e10, "remaining_auth": 1.1e10,
+        "with_auth": 4, "blackout_share_count": 0.1, "blackout_share_cap": 0.17, "shut_days_before_close": 14,
+        "reopen_bdays": 2, "release_sources": {"calendar": 3, "estimated": 3}, "history_start": "2010-01-04"})
+
+
+def test_buybacks_page(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    from core import store
+    _fake_buybacks(store)
+    page = AppTest.from_file(str(ROOT / "modules" / "buybacks" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    assert len(page.dataframe[0].value) == 2          # reopening within 10 trading days: S0 and S5
+    assert "Read this page as a calendar" in " ".join(m.value for m in page.markdown)
+    page.selectbox[0].set_value("Energy").run()
+    assert not page.exception, page.exception
+
+
+def test_buybacks_page_without_data(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "buybacks" / "page.py"), default_timeout=60).run()
+    assert not page.exception and page.info
+
+
+def _fake_candidates(store):
+    t = pd.Timestamp.now(tz="UTC").floor("min")
+    cand = pd.DataFrame({
+        "accession": ["A-1", "A-2", "A-3", "A-4"], "cik": [1, 1, 2, 3], "company": ["S0 Inc", "S0 Inc", "Two Co", "Three"],
+        "tickers": ["S0", "S0", "S4", "ZZZ"], "items": ["2.02,9.01", "8.01", "7.01", "2.02"],
+        "tradable_at": [t - pd.Timedelta(days=5), t - pd.Timedelta(days=2), t - pd.Timedelta(days=1),
+                        t - pd.Timedelta(days=200)],
+        "published_at": t, "url": "https://www.sec.gov/x", "passages": "The board approved a $2 billion repurchase."})
+    store.save_frame("buyback_news", "candidates", cand)
+    return cand
+
+
+class _BuybackMsg:
+    def __init__(self, payload, stop="end_turn"):
+        import json as _json
+        from types import SimpleNamespace as NS
+        self.content = [NS(type="text", text=_json.dumps(payload))]
+        self.stop_reason, self.model = stop, "claude-haiku-5-5"
+        self.usage = NS(input_tokens=900, output_tokens=150)
+
+
+def _verdict(kind, amount, first=True):
+    return {"kind": kind, "first_disclosed_here": first, "announced_on": None, "amount_usd": amount,
+            "total_authorized_usd": None, "shares": None, "summary": "Board approved a buyback."}
+
+
+def test_buyback_news_classifies_new_candidates_once(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from types import SimpleNamespace as NS
+    from core import store
+    from modules.buybacks import news
+    _fake_candidates(store)
+    answers = {"A-1": _verdict("new_program", 2e9), "A-2": _verdict("increase", 2e9),      # same amount within 120 days
+               "A-3": _verdict("existing_program_mention", None)}
+    sent = []
+
+    def create(**kw):
+        assert kw["model"] == "claude-haiku-5-5" and kw["output_config"]["format"]["type"] == "json_schema"
+        assert kw["thinking"] == {"type": "disabled"} and "fallbacks" not in kw
+        acc = ["A-3", "A-2", "A-1"][len(sent)]   # newest first
+        sent.append(acc)
+        return _BuybackMsg(answers[acc])
+    api = NS(messages=NS(create=create))
+    news.run(api=api, log=lambda *a: None)
+    assert len(sent) == 3                     # A-4 is older than the daily lookback: left for the backfill
+    ann = store.load_frame("buyback_news", "announcements")
+    assert list(ann["accession"]) == ["A-1"]  # the repeat and the recap are dropped
+    news.run(api=api, log=lambda *a: None)
+    assert len(sent) == 3                     # nothing is classified twice
+    assert store.load_json("buyback_news", "classify_summary")["spent_usd"] > 0
+
+
+def test_buyback_news_without_credentials(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from core import store
+    from modules.buybacks import news
+    _fake_candidates(store)
+
+    def no_creds():
+        raise news.NoCredentials("none")
+    monkeypatch.setattr(news, "client", no_creds)
+    logs = []
+    news.run(log=logs.append)
+    assert any("no Anthropic credentials" in m for m in logs)
+
+
+def test_buybacks_page_with_announcements(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    from core import store
+    _fake_buybacks(store)
+    cand = _fake_candidates(store)
+    store.save_frame("buyback_news", "classified", pd.DataFrame(
+        [{"accession": "A-1", **_verdict("increase", 3e9), "batch": False, "input_tokens": 900, "output_tokens": 100}]))
+    from modules.buybacks import news
+    news.publish(cand, news.load_classified(), log=lambda *a: None)
+    page = AppTest.from_file(str(ROOT / "modules" / "buybacks" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    assert any(set(d.value.columns) >= {"Ticker", "What", "Amount $bn"} for d in page.dataframe)

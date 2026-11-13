@@ -1,15 +1,16 @@
 # Market Compass
 
-**One Streamlit hub for market regime, breadth, credit, macro, volatility and tail-risk
-dashboards, plus an AI analyst that reads all of them and writes a daily brief.**
+**One Streamlit hub for market regime, breadth, credit, macro, volatility, tail-risk,
+value/growth and buyback dashboards, plus an AI analyst that reads all of them and writes a
+daily brief.**
 
 Market Compass is two things:
 
-- **Its own market dashboards.** Four regime gauges, S&P 500 breadth, style/sector/factor
-  performance and rotation, a market map, a historical look-alike engine and a
-  Claude-powered analyst.
+- **Its own market dashboards.** Four regime gauges, the headline economic numbers, NYSE and
+  S&P 500 breadth, style/sector/factor performance and rotation, global markets, a market
+  map, a historical look-alike engine and a Claude-powered analyst.
   All of it is built from public data.
-- **A home for five companion projects.** Each companion is its own repository with its own
+- **A home for seven companion projects.** Each companion is its own repository with its own
   models and dependencies. A nightly job runs each project's publish script with that
   project's own Python, and the hub shows the results on one page per project. A sidebar
   link opens each project's full app, starting it first if it isn't running.
@@ -45,7 +46,7 @@ Market Compass is two things:
 | Page | Needs | What it shows |
 |---|---|---|
 | **Home** | - | Data freshness for every module, and everything registered with the hub |
-| **Market Environment** | this repo | Fear/Greed, Liquidity, Technical and Economic regime gauges, each with a trend, a history chart against the S&P 500 and a measured link to next-period returns. Also NYSE-wide and S&P 500 breadth, a style/size grid, sector and factor tiles, a sector/style/factor rotation map with overbought/oversold readings vs SPY, and an S&P 500 / Nasdaq 100 market map. |
+| **Market Environment** | this repo | Fear/Greed, Liquidity, Technical and Economic regime gauges, each with a trend, a history chart against the S&P 500 and a measured link to next-period returns. Also the headline economic numbers (Fed funds, 10-year, curve, unemployment, payrolls, CPI, core PCE, GDP), NYSE-wide and S&P 500 breadth, a style/size grid, sector and factor tiles, a sector/style/factor rotation map with overbought/oversold readings vs SPY, a global markets table (about 57 ETFs: equities by region, bonds, commodities, currencies) and an S&P 500 / Nasdaq 100 market map. |
 | **Look-alikes** | this repo | The 15 most similar past market states since 1997 and what the S&P 500 did next, with the method's own walk-forward track record |
 | **Analyst** | this repo + Anthropic API key | A daily brief written by Claude from the hub's data, and a chat for follow-up questions |
 | **Credit** | [credit-spread-analyzer](https://github.com/AndrewFSee/credit-spread-analyzer) | Credit-stress regime, spread forecast, rating tiers, CCC-B decompression, Fed liquidity |
@@ -54,6 +55,8 @@ Market Compass is two things:
 | **Tail Risk** | [tail-risk-scenario-engine](https://github.com/AndrewFSee/tail-risk-scenario-engine) | 21-day VaR/CVaR from 20,000 simulated paths, hedges, CVaR-optimal weights, stress scenarios |
 | **Events & Odds** | [TickerLake](https://github.com/AndrewFSee/TickerLake) | The US release calendar with what Kalshi and Polymarket price for each number, the Fed path meeting by meeting, and index and single-stock prediction markets |
 | **Risk Forecasts** | [augury](https://github.com/AndrewFSee/augury) | Per-ticker 1/5/21-day return distributions (VaR, ES, price ranges, forecast vol) for 28 ETFs and stocks, with a daily out-of-sample VaR track record since 2016 |
+| **Value & Growth** | [TickerLake](https://github.com/AndrewFSee/TickerLake) | Value and growth scores for every S&P 500 member from its SEC filings, point in time: a zoomable sector map, sector history since 2012, a stock map and table, and the backtest |
+| **Buybacks** | [TickerLake](https://github.com/AndrewFSee/TickerLake) + [SentIQ](https://github.com/AndrewFSee/sentiq) (+ Anthropic API key) | Buyback announcements from 8-Ks as they are filed, classified by Claude; each member's buybacks, buyback yield and remaining authorization; the estimated share of the index in its buyback blackout, with windows reopening soon |
 
 The first three pages work with this repository alone. Each companion page reads what
 its project published. If a project isn't installed, its page says there's no data yet
@@ -61,9 +64,10 @@ and the rest of the hub carries on.
 
 ## The companion projects
 
-To get the full hub, **clone the six companion repositories next to this one**, each
+To get the full hub, **clone the seven companion repositories next to this one**, each
 with its own virtual environment. They are independent projects with their own READMEs,
-tests and Streamlit apps. The hub only needs each one's `scripts/publish_to_hub.py`.
+tests and apps. The hub only needs each one's publish script (`scripts/publish_to_hub.py`,
+or `scripts/publish_<what>_to_hub.py` where one project feeds several pages).
 
 | Project | What it adds to the hub | Notes |
 |---|---|---|
@@ -74,6 +78,8 @@ tests and Streamlit apps. The hub only needs each one's `scripts/publish_to_hub.
 | [**augury**](https://github.com/AndrewFSee/augury) | `data/augury/`: forecast table, 21-day price bands, recent prices, every past forecast with its outcome, track-record scores | Downloads prices from Yahoo. The first run scores every day since 2016 for 28 tickers (about 7 minutes); after that it recomputes only the last few weeks (under a minute). |
 | [**TickerLake**](https://github.com/AndrewFSee/TickerLake) | `data/revisions/`: sector EPS-estimate revisions and analyst rating actions | A data lake with its own daily scheduled run; its `analyst` stage snapshots Yahoo's consensus for every S&P 500 member. Its publishers read only the lake. Yahoo keeps no estimate history, so the history starts when you start collecting. |
 | [**TickerLake**](https://github.com/AndrewFSee/TickerLake) (same repo) | `data/breadth/`: NYSE-wide breadth; `data/events/`: release calendar and prediction-market odds | Its `listings` and `listed_ohlcv` stages keep daily bars for every NYSE common stock (one-time `tickerlake backfill listed_ohlcv`, about 13 minutes). `econ_calendar` (needs a FRED key) and `prediction_markets` (Kalshi and Polymarket, no keys) snapshot the calendar and odds daily. |
+| [**TickerLake**](https://github.com/AndrewFSee/TickerLake) (same repo) | `data/style/`: value and growth scores; `data/buybacks/`: repurchases, authorizations and estimated blackout windows | Both read its `filings_facts` (SEC company facts). Buyback windows need each quarter's earnings-release date: run `python scripts/backfill_earnings_releases.py` once (about 4 minutes; it reads SEC filing indexes). |
+| [**SentIQ**](https://github.com/AndrewFSee/sentiq) | `data/buyback_news/`: candidate buyback passages from 8-Ks | A news and filings collector that polls EDGAR every 2 minutes. Its publisher only reads what SentIQ already stored, so the hub never fetches from the SEC itself. The hub's own job then has Claude Haiku read each candidate once (about $0.0003 a filing). |
 
 ## Quick start (hub only)
 
@@ -94,8 +100,8 @@ python run_jobs.py                     # real data
 ```
 
 `--demo` fills every hub-owned page with synthetic data. The first real run takes a few
-minutes. It pulls 5 years of prices for about 500 S&P 500 members and 45 ETFs, full SPY
-and VIX history, about 35 FRED series and market caps. Later runs reuse cached market caps
+minutes. It pulls 5 years of prices for about 500 S&P 500 members and 45 ETFs, 2 years for
+the 57 global-markets ETFs, full SPY and VIX history, about 35 FRED series and market caps. Later runs reuse cached market caps
 for a week.
 
 ## Full setup with all projects
@@ -110,7 +116,9 @@ projects/
 ├── macro-regime-nowcaster/
 ├── stochastic-vol-surface/
 ├── tail-risk-scenario-engine/
-└── TickerLake/
+├── augury/
+├── TickerLake/
+└── SentIQ/
 ```
 
 ```bash
@@ -120,7 +128,9 @@ git clone https://github.com/AndrewFSee/credit-spread-analyzer.git
 git clone https://github.com/AndrewFSee/macro-regime-nowcaster.git
 git clone https://github.com/AndrewFSee/stochastic-vol-surface.git
 git clone https://github.com/AndrewFSee/tail-risk-scenario-engine.git
+git clone https://github.com/AndrewFSee/augury.git
 git clone https://github.com/AndrewFSee/TickerLake.git
+git clone https://github.com/AndrewFSee/sentiq.git SentIQ
 ```
 
 A project cloned one level deeper (`macro-regime-nowcaster/macro-regime-nowcaster/`) is
@@ -138,7 +148,8 @@ cd stochastic-vol-surface    && python -m venv .venv && .venv/bin/pip install -r
 cd tail-risk-scenario-engine && python -m venv .venv && .venv/bin/pip install -e ".[app,dev]" && cd ..
 ```
 
-(On Windows use `.venv\Scripts\pip`.)
+(On Windows use `.venv\Scripts\pip`.) augury, TickerLake and SentIQ are set up as their own
+READMEs describe; each still needs its `.venv` inside its folder.
 
 **3. Do each project's one-time data setup.** Build the macro panel
 (`python scripts/build_features.py` in macro-regime-nowcaster). Run the vol scraper once
@@ -152,10 +163,12 @@ publish script, so one `FRED_API_KEY` serves the hub and the macro project.
 
 ```bash
 cd market-compass
-python run_jobs.py                     # credit -> market -> analogs -> macro -> vol -> tailrisk -> augury -> analyst
+python run_jobs.py                     # every job in registry.JOBS order (below)
 streamlit run app.py
 ```
 
+The order is credit → breadth → market → analogs → macro → vol → tailrisk → augury →
+revisions → events → style → buybacks → buyback_news → buyback_news_classify → analyst.
 A project that isn't cloned, or has no `.venv`, is skipped with a one-line note instead
 of failing the run. `python run_jobs.py --only market credit` runs a subset.
 
@@ -190,6 +203,17 @@ down by gauge band. Currently none of the four passes. The page says so rather t
 implying a signal.
 
 ![Gauges vs the S&P 500: coincident and next-period correlations, and S&P returns by Fear/Greed band](docs/screenshots/market-vs-spy.png)
+
+**Economy at a glance.** Nine tiles with the latest published figure from FRED: the Fed funds
+target range, the 10-year yield, the 10-year minus 2-year spread, unemployment, the monthly
+change in payrolls, CPI, core CPI and core PCE year over year, and real GDP growth at an
+annual rate. Each tile shows:
+
+- the change against a month earlier (daily series) or the prior release;
+- two years of history;
+- the next release date, from the Events calendar (hover the tile).
+
+![Economy at a glance: nine headline economic tiles with change and two-year history](docs/screenshots/market-economy.png)
 
 **Breadth, style and sectors.** The breadth panel covers either all NYSE common stocks
 (about 2,200, from TickerLake) or the S&P 500 members:
@@ -250,6 +274,15 @@ Improving → Leading → Weakening → Lagging. ETFs whose RSI on the ETF/SPY r
   - the balance of analysts' upward and downward revisions;
   - upgrades, downgrades and price-target changes over the last 30 days;
   - the companies with the biggest revisions.
+
+**Global markets.** About 57 US-listed ETFs grouped as equities by region and country,
+bonds, commodities, and currencies and bitcoin. A bar chart ranks the chosen group over the
+chosen period. The table gives for each one:
+
+- returns over 1 day, month to date, year to date and 1 year;
+- where the price sits in its 52-week range;
+- its distance from the 200-day average and that average's direction;
+- RSI(14) and a weekly sparkline.
 
 **Market map.** An S&P 500 or Nasdaq 100 treemap, sized by market cap and coloured by
 return over the chosen period. Click a sector to zoom in.
@@ -373,6 +406,45 @@ price for each number:
 Odds are snapshotted daily, so each release's implied median gets a history. These are the
 markets' prices, not forecasts the dashboard has tested.
 
+### Value & Growth
+
+From TickerLake. Every S&P 500 member gets two scores from its own SEC filings, prices and
+dividends:
+
+- **Value** averages book, trailing earnings, sales and dividends relative to price.
+- **Growth** averages the 3-year trend of EPS and of sales per share, capex / assets and
+  return on assets.
+
+0 is the cap-weighted index, and 1 is one standard deviation across members. The page shows
+a sector map (where each sector was 6 months ago, optionally), each sector's history since
+2012, and a stock map and table you can filter by sector. Both maps zoom with the scroll
+wheel and pan by dragging.
+
+The page calls itself descriptive because the backtest found nothing to trade on (see
+[Methodology](#value-and-growth-scores)).
+
+![Value & Growth page: sector map of value vs growth scores, sector table and sector history](docs/screenshots/value-growth.png)
+
+### Buybacks
+
+From TickerLake and SentIQ:
+
+- **Recently announced.** New, larger or replacement buyback authorizations, accelerated
+  repurchases and tender offers, found in 8-Ks as they are filed. Each row has the amount,
+  the amount as a share of market cap, a one-line summary and a link to the filing.
+- **The members.** Each one's buybacks over the last quarter and year, buyback yield,
+  one-year change in share count, authorization left, and recent announcements.
+- **The blackout.** Companies usually stop buying back shortly before each quarter's end
+  until just after they report. The windows aren't disclosed, so the page estimates them
+  from each company's fiscal calendar and release dates, and charts the share of the index
+  (by count and by market cap) in its window, from 2010 to 90 days ahead. It also lists the windows
+  reopening in the next two weeks.
+
+Expanders on the page state what the announcement and blackout tests found (see
+[Methodology](#buybacks-1)).
+
+![Buybacks page: totals, recently announced buybacks classified from 8-Ks, and the blackout chart](docs/screenshots/buybacks.png)
+
 ### Home
 
 Data freshness for every module, and everything registered with the hub.
@@ -400,6 +472,11 @@ run_jobs.py ──┬─ credit    {credit-spread-analyzer/.venv}  scripts/publi
               ├─ macro     {macro-regime-nowcaster/.venv}  publish_to_hub.py         │         │
               ├─ vol       {stochastic-vol-surface/.venv}  publish_to_hub.py         │         v
               ├─ tailrisk  {tail-risk-scenario-engine/.venv} publish_to_hub.py       │   app.py (Streamlit) -> pages read only
+              ├─ augury    {augury/.venv}  publish_to_hub.py                         │
+              ├─ breadth, revisions, events, style, buybacks                         │
+              │            {TickerLake/.venv}  scripts/publish_*_to_hub.py           │
+              ├─ buyback_news           {SentIQ/.venv}  publish_buyback_candidates   │
+              ├─ buyback_news_classify  modules/buybacks/news.py  (Claude Haiku)     │
               └─ analyst   modules/analyst/job.py  (Claude + read-only tools) ───────┘
 ```
 
@@ -456,8 +533,10 @@ All recipes live in `modules/market/config.py` and the pure-pandas
     up to a week for weekly series, a month for monthly data.
   - A link counts as reliable when |ρ|·√(n−1) > 1.96.
 
-**Breadth** uses S&P 500 members as a proxy for the NYSE, because free NYSE-wide
-advance/decline data is hard to find.
+**Breadth.** The breadth panel defaults to every NYSE common stock (about 2,200, from
+TickerLake's daily bars). It uses dividend-adjusted closes, because raw closes understate
+breadth for high-payout closed-end funds, REITs and MLPs. The gauges still use S&P 500
+member breadth, which has the longer history.
 
 ### Rotation map
 
@@ -534,6 +613,65 @@ the zig-zag of shorter windows.
   is too small to beat trading costs. Price-target raises minus cuts were statistically
   clear only after 2019.
 
+### Value and growth scores
+
+The method lives in TickerLake (`tickerlake.analytics.style`), built on CRSP-style factor
+definitions:
+
+- **Point in time.** Each fact is used from the day after it was first filed. A quarter
+  counts only once every input it uses has been filed: about a fifth of quarters had an input
+  (often total assets or cash flow) first filed later, as a comparative in the next report.
+- **Factors.** Quarterly flows come from 3-month facts or differenced year-to-date facts.
+  Share counts are put on today's split basis. Each factor is clipped at the 2.5th and 97.5th
+  percentiles and z-scored against the cap-weighted mean.
+- **Backtest** (167 month-ends since 2012, S&P 500 members at each date):
+  - stock-level rank correlation with the next month's return: value +0.004 (t 0.2),
+    growth +0.004 (t 0.4), about 0 in both halves;
+  - the cheap-and-growing corner: −0.17% a month vs the rest (t −1.2);
+  - sectors over the next 3 months: value −0.05 (t −1.0), growth +0.07 (t 1.5).
+
+So the page describes where sectors and stocks sit; it doesn't rank them. The same research
+tried other published stock scores on the same point-in-time data (Piotroski F, Mohanram G,
+gross profitability, net share issuance, asset growth, 12-1 momentum, low volatility, a
+7-check trend list and a composite). None had a rank correlation with next month's return
+with |t| ≥ 2. Net buybacks came closest (t 1.9, and t 2.0 over 3 months).
+
+### Buybacks
+
+- **Repurchases** come from each company's cash-flow statement
+  (`PaymentsForRepurchaseOfCommonStock`, reported year to date and differenced into
+  quarters), with the remaining authorization from the same filings. Dollar figures trail
+  by up to a quarter.
+- **Blackout windows** (TickerLake `tickerlake.analytics.buybacks`): a window shuts 14 days
+  before the fiscal quarter's end and reopens 2 business days after the earnings release.
+  Release dates come from each company's 8-K (Item 2.02) since 2010, about 41,600 quarters
+  with 97% matched; upcoming ones from the earnings calendar, else the company's usual lag.
+  The rule is a common convention, not any company's disclosed policy.
+- **Blackout test** (2010–2026): the share of the index in its window had a rank correlation
+  of +0.12 with the S&P 500's next 20 days (t 1.5), the opposite of the "blackout season is
+  weak" story but not significant. Heavy buyers in an open window beat heavy buyers in a shut
+  one by 2.75 basis points a day (t 1.2), and that faded in the second half.
+- **Announcements.** SentIQ keeps every 8-K's full text. Its publisher pulls the passages
+  where a share repurchase sits near words like authorize, program, increase, accelerated or
+  tender: about 14,700 filings since 2019, about 400 a month now. Claude Haiku 5.5 reads each
+  candidate once (structured output, cached by filing) and keeps only first disclosures.
+  About 92% of the rows it kept were real first disclosures in a hand check. The full history
+  cost about $2 to classify.
+- **Announcement test** (1,786 announcements, 2019–2026, returns over SPY, t-statistics
+  clustered by week):
+  - from the last close before the filing to the first close after it: +1.30% (t 7.5);
+    +1.33% when the 8-K carried only the buyback;
+  - inside earnings releases: +1.52% more than same-week earnings releases from companies
+    that only recapped an existing program (t 4.2);
+  - filed outside market hours, the next day's open to close still added +0.41% (t 4.5;
+    +0.57%, t 2.6, inside earnings releases), before costs;
+  - afterwards, nothing: next 20 and 60 days about 0. The multi-year drift reported in older
+    studies doesn't show up.
+
+  Most announcements are filed between 6:00 and 9:30 ET or between 4:00 and 5:30 PM ET, so a
+  pre-open run (see [Scheduling](#scheduling-the-nightly-refresh)) puts the morning ones on
+  the page before the open.
+
 ### Look-alikes
 
 `modules/analogs/engine.py` is pure and fully testable:
@@ -561,13 +699,14 @@ client and never call the API.
 | Setting | Where | Purpose |
 |---|---|---|
 | `FRED_API_KEY` | `.env` | FRED API (free key). Without it the market job falls back to the slower keyless CSV endpoint. The macro publisher requires it. |
-| `ANTHROPIC_API_KEY` | `.env` | Analyst brief and chat (optional) |
+| `ANTHROPIC_API_KEY` | `.env` | Analyst brief and chat, and buyback-announcement classification (optional) |
 | `HUB_DATA_DIR` | environment | Data folder (default `data/`) |
 | `HUB_PROJECTS_DIR` | environment | Parent folder of the companion projects (default: this repo's parent) |
 | Tickers, FRED series, gauge recipes, bands, trend windows | `modules/market/config.py` | |
 | `CREDIT_OVERRIDE` | `modules/market/config.py` | Use credit-spread-analyzer's spliced HY/IG history in the gauges (on). Falls back to FRED if its table is missing. |
 | Look-alike features, weights, lags | `modules/analogs/config.py` | |
 | Model, effort, prompts, briefs kept | `modules/analyst/config.py` | |
+| Buyback classifier: model, prompt, daily cap, look-back | `modules/buybacks/news.py` | Daily: new candidates from the last 30 days, at most 300. History: `python -m modules.buybacks.news estimate` (free token count), then `backfill --yes` and `collect` (Batch API, half price). |
 
 `.env` is git-ignored. Copy `.env.example` to `.env` to start.
 
@@ -582,8 +721,13 @@ after that project's scraper.
   - runs whether or not you're logged on;
   - catches up a missed run.
 
-- **Macro panel, monthly:** `scripts
-egister_panel_task.ps1` (from an elevated prompt)
+- **Buybacks, before the open:** `scripts\register_buyback_task.ps1` registers
+  `\MarketCompass\BuybackPreOpen`:
+  - weekdays at 9:20 AM, running only the two buyback-announcement jobs (about 20 seconds);
+  - puts 8-Ks filed before the open on the Buybacks page by 9:30;
+  - no catch-up: a missed run is skipped, and the evening refresh covers the day.
+
+- **Macro panel, monthly:** `scripts\register_panel_task.ps1` (from an elevated prompt)
   registers `\MarketCompass\MacroPanelRebuild`:
   - 8:00 PM on the 20th of each month, once most of the previous month's data is out;
   - rebuilds macro-regime-nowcaster's walk-forward panel (about 3 hours), then republishes it;
@@ -625,8 +769,8 @@ python -m pytest -q
 
 The tests run the whole hub pipeline on synthetic data and render every page headlessly
 with Streamlit's `AppTest`. Each companion page is fed a fake in its publisher's schema.
-They also cover the gauge and statistics maths, the look-alike engine, the analyst (with a
-fake client), the app launcher, skipping missing projects, and module reloading. They need
+They also cover the gauge and statistics maths, the look-alike engine, the analyst and the
+buyback classifier (each with a fake client), the app launcher, skipping missing projects, and module reloading. They need
 no network and no API keys.
 
 ## Repository layout
@@ -648,10 +792,12 @@ modules/
   market/               config, sources (network), indicators (pure), job, page, demo
   analogs/              config, engine (pure), job, page
   analyst/              config, tools (read-only), agent (SDK tool runner), job, page
-  credit/ macro/ vol/ tailrisk/ augury/
+  buybacks/             config, page, news (Claude classification of SentIQ's 8-K candidates)
+  credit/ macro/ vol/ tailrisk/ augury/ events/ style/
                         config + read-only page for each companion project's output
 scripts/
   register_task.ps1     Windows scheduled task for the nightly refresh
+  register_buyback_task.ps1  Weekday pre-open task for the buyback-announcement jobs
   register_panel_task.ps1  Monthly task: rebuild the macro panel (rebuild_macro_panel.py)
   fix_task_timezones.ps1  Make scheduled tasks follow local time across DST
 tests/test_smoke.py     End-to-end tests on synthetic data
@@ -660,14 +806,20 @@ docs/screenshots/       Images in this README
 
 ## Limitations
 
-- **The gauges and the rotation map describe the market; they don't forecast it.** No
-  gauge currently shows a reliable link to next-period S&P 500 returns, and no rotation
-  measure reliably ranks next month's sector winners. The pages say so.
+- **The gauges, the rotation map and the value/growth scores describe the market; they
+  don't forecast it.** No gauge currently shows a reliable link to next-period S&P 500
+  returns, no rotation measure reliably ranks next month's sector winners, and the
+  value/growth scores don't rank next month's stocks. The pages say so.
+- **Buyback announcements move prices at once.** The one clear effect in the hub is the
+  move when a buyback is announced. Most of it happens by the first close, and nothing
+  follows over the next weeks. The rows are classified by a model, so a few are recaps of
+  older programs.
 - **Calibration.** The liquidity gauge never reached its "loose" band in five years of
   history. The technical gauge ranks against the trailing 2 years, so ordinary pullbacks
   after a strong run can read "bearish". Both are open calibration items.
-- **Proxies.** Breadth uses S&P 500 members, not the whole NYSE. There's no put/call
-  component.
+- **Proxies.** The gauges use S&P 500 member breadth, not the whole NYSE (the breadth panel
+  has both). Buyback blackout windows are estimated from a common convention, not disclosed.
+  There's no put/call component.
 - **Free data.** Yahoo Finance and Wikipedia can change without notice. FRED serves only
   about 3 years of the ICE OAS series.
 - **Platform.** Developed and run on Windows 11. The hub, jobs and tests are

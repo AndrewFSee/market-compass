@@ -68,6 +68,8 @@ def fetch_inputs(log=print) -> dict:
     log("Fetching rotation-map history...")
     rotation = sources.download_closes(cfg.rotation_tickers() + cfg.cross_asset_yahoo(), cfg.ROTATION_PERIOD,
                                        log=log)
+    log("Fetching global markets...")
+    glob = sources.download_closes(cfg.global_tickers(), cfg.GLOBAL_PERIOD, log=log)
     log("Fetching fund flows (State Street)...")
     ssga = sources.fetch_ssga_history(cfg.FLOW_TICKERS, cfg.SSGA_NAV_URL, log=log)
     log("Fetching index members...")
@@ -76,7 +78,9 @@ def fetch_inputs(log=print) -> dict:
     stocks = sources.download_closes(cons["yf_symbol"].tolist(), cfg.PRICE_PERIOD, log=log)
     caps = _market_caps(cons["yf_symbol"].tolist(), log)
     missing += [t for t in cfg.all_etf_tickers() if t not in etf.columns]
+    missing += [t for t in cfg.global_tickers() if t not in glob.columns]
     return {"fred": fred, "etf": etf, "spy_long": spy_long, "vix_long": vix_long, "rotation_prices": rotation, "ssga": ssga,
+            "global_prices": glob,
             "constituents": cons, "stocks": stocks, "caps": caps, "missing": missing, "demo": False}
 
 
@@ -382,6 +386,14 @@ def build(inputs: dict, log=print) -> dict:
     extras = {**sector_internals(rot, stocks, cons, inputs["caps"]), **leadership(rot), **cross_asset(rot, fred),
               **fund_flows(inputs.get("ssga"), rot, session)}
 
+    log("Computing global markets and headline economy...")
+    glob = inputs.get("global_prices")
+    glob = etf if glob is None or glob.empty else glob
+    glob = glob.loc[:session, [t for t in cfg.global_tickers() if t in glob]]
+    info = pd.DataFrame(cfg.GLOBAL_MARKETS, columns=["ticker", "name", "group", "region"]).set_index("ticker")
+    global_markets = info.join(ind.market_snapshot(glob, cfg.GLOBAL_SPARK_WEEKS), how="inner").reset_index()
+    headline = {"items": ind.headline_econ(fred, cfg.HEADLINE_ECON, cfg.HEADLINE_SPARK)}
+
     log("Computing returns...")
     etf_returns = ind.period_returns(etf.drop(columns=[cfg.VIX], errors="ignore"), cfg.TIMEFRAMES)
     stock_returns = ind.period_returns(stocks, cfg.TIMEFRAMES)
@@ -403,7 +415,7 @@ def build(inputs: dict, log=print) -> dict:
     return {"gauges": gauges, "gauge_history": history, "econ_history": econ_history, "long_history": long_history,
             "breadth": breadth, "etf_returns": etf_returns, "constituents_perf": cons_perf,
             "rotation_path": rotation_path, "rotation_now": rotation_now, "rotation_stats": rotation_stats,
-            **extras, "meta": meta}
+            "global_markets": global_markets, "headline_econ": headline, **extras, "meta": meta}
 
 
 def save(outputs: dict) -> None:
