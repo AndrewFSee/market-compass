@@ -251,5 +251,13 @@ with st.expander("How to read these numbers"):
         "- Thin markets move on small orders. Compare the traded amounts before trusting a number, and prefer "
         "events traded on both venues.\n"
         "- Kalshi counts contracts (each pays $1), Polymarket dollars.\n"
-        "- These are the markets' odds, not forecasts this dashboard has tested. The history starts with the "
-        "first daily snapshot, so whether they beat the usual consensus can be measured once releases accumulate.")
+        "- **Index and stock markets were tested on the venues' own price history (measured 2026-11-13) and "
+        "showed no signal on direction.** Polymarket's daily *Up or Down* markets (17 tickers, 3,888 days since "
+        "Oct 2025) sit near 50% at the prior close and don't predict the day (slope 0.02, t 0.1). At the open "
+        "they forecast worse than the gap and recent volatility alone. Kalshi's daily S&P 500 and Nasdaq-100 "
+        "ranges (about 900 days since Dec 2022, read at 11:30 ET): the implied median doesn't predict the "
+        "afternoon (t 1.2 and -1.2). The ranges are too wide: the central 50% held the close on 60% / 56% of "
+        "days. Their width tracks the size of the afternoon move about as well as the 0-day VIX at the same "
+        "time, but adds nothing beyond it. Read them as what's priced, not as an edge.\n"
+        "- The economic-release odds are untested: their history starts with the first daily snapshot "
+        "(2026-11-12), so whether they beat the usual consensus can be measured once releases accumulate.")

@@ -150,7 +150,22 @@ Publishers are thin: they call the project's own validated functions, never re-i
   dates for a curated list in its config; FOMC/ISM dates from Kalshi close times; FRED dates
   "FOMC Press Release" every day, which is what broke SimpleVisor's calendar) and
   `prediction_markets` (Kalshi + Polymarket public APIs, daily snapshot; `tickerlake.analytics.
-  prediction` turns ladders into implied medians). Odds history starts 2026-11-12.
+  prediction` turns ladders into implied medians). Odds history starts 2026-11-12, but both venues
+  serve past prices: Kalshi `/historical/markets` + `/historical/markets/{t}/candlesticks` (hourly
+  bid/ask; daily KXINX/KXNASDAQ100 since 2022-04, ~1,100 days) and Polymarket CLOB `prices-history`
+  (needs startTs/endTs; `interval=max` returns nothing for closed markets; gamma `/events/keyset`
+  past offset 500). Measured 2026-11-12 on Polymarket daily "Up or Down" (17 tickers, 3,888 markets
+  since 2025-10, median volume $2.7k): price at the prior close sits at ~0.50 (mean |p-0.5| 0.017)
+  and predicts nothing (slope 0.02, t 0.1); at the open it is worse than a normal model from the gap
+  and trailing vol (Brier 0.214 vs 0.202) and its deviations from that model add nothing (t 1.0).
+  Measured 2026-11-13 on Kalshi daily S&P 500 / Nasdaq-100 ranges read at 11:30 ET (899 / 865 days
+  since 2022-12; older events have no strike fields; series INX/INXD/KXINX, NASDAQ100/D/KX...):
+  ranges too wide (central 50% held the close 60% / 56% of days, 80% held 88% / 86%; partly
+  mid-quotes of empty-bid buckets). Size of the rest-of-day move: Kalshi IQR rank corr 0.35, about
+  VIX1D at 11:30 (0.37, QLIKE -10.12 vs -10.07) and adds nothing beyond it (t 1.2 vs 2.6); beats VIX
+  and VXN prev close. Direction (median vs Yahoo 11:30 level, ~680 days): S&P slope +0.5 (t 1.2),
+  Nasdaq -0.1 (t -1.2). Kalshi minute candles exist only for minutes with a change; historical
+  per-market candles use `close`, live ones `close_dollars`; ~4 requests/s.
 - Projects are found next to the hub (`registry.project()`: `<name>` or `<name>/<name>`; override
   with `HUB_PROJECTS_DIR`). A job whose project or venv is missing is skipped, not failed.
 - Tests here use synthetic data in each publisher's schema; if a publisher's output changes,
