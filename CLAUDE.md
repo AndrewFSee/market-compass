@@ -77,6 +77,13 @@ scores.
   weekly changes, since ~1999): oil/XLE +0.58, HY spread/offense-defense +0.42, 10Y/XLRE +0.38,
   10Y/XLU +0.28, curve/XLF +0.17, copper-gold/XLB +0.14. Commodity drivers are Yahoo futures
   (CL=F, HG=F, GC=F), downloaded with the rotation history.
+- Sector dispersion (`indicators.dispersion`: std of 4-week sector returns, 63-day average pairwise
+  correlation). Measured 2026-11-13 (scratch script; 9 original SPDRs, 340 non-overlapping 4-week
+  periods since 2000, each measure z-scored on 52 weeks): no measure, including the spread of
+  technical-vote scores, moves leadership persistence (rank corr of last vs next 4-week return over
+  SPY, base -0.04; slopes +0.005..+0.021 per z, |t| < 1, ~0 both halves) or makes stretched sectors
+  revert more. Only link: high correlation -> wider dispersion next month (t -3.0). The page caption
+  states this; the old "rotation matters most" claim was removed.
 - Fund flows (`job.fund_flows`, `FLOW_*`): State Street NAV-history xlsx per sector SPDR (needs
   openpyxl), since 2003-12. Flow = change in shares x NAV; splits (Dec 2025 2-for-1s), each
   fund's first 63 days and days moving >50% of assets (XLRE's 2016 spin-off) are excluded;

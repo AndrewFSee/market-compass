@@ -786,8 +786,13 @@ with st.container(border=True):
                 with col:
                     ui.chart(fig, key=f"disp_{key}")
                     st.caption(f"Now {s.iloc[-1]:.2f}: higher than {pct:.0f}% of weeks since {s.index[0]:%Y}.")
-            st.caption("High dispersion with low correlation = sectors going their own way, when rotation matters "
-                       "most. Low dispersion with high correlation = everything moves together with the market.")
+            st.caption("Dispersion is how far apart the sectors' 4-week returns are; correlation, how much they move "
+                       "together. Neither one forecasts a change in leadership. Tested on the nine original sector SPDRs "
+                       "since 2000 (340 non-overlapping 4-week periods, measured 2026-11-13): high dispersion and low "
+                       "correlation left the link between last month's and next month's relative returns unchanged "
+                       "(t 0.3 each). Last month's leaders trail slightly the next month whatever the dispersion "
+                       "(rank correlation -0.04). One thing correlation does foreshadow: unusually high correlation "
+                       "came before wider sector moves the next month (t -3.0), i.e. stress, not direction.")
 
 # ================================================================= cross-asset
 st.markdown("##### Cross-asset checks")
