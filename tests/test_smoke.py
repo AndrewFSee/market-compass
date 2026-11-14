@@ -1116,3 +1116,77 @@ def test_buybacks_page_with_announcements(tmp_path, monkeypatch):
     page = AppTest.from_file(str(ROOT / "modules" / "buybacks" / "page.py"), default_timeout=60).run()
     assert not page.exception, page.exception
     assert any(set(d.value.columns) >= {"Ticker", "What", "Amount $bn"} for d in page.dataframe)
+
+
+def test_growth_value_calc():
+    import numpy as np
+    from modules.growth_value import calc, demo
+    from modules.growth_value import config as cfg
+    text = demo.french_text()
+    secs = calc.parse_sections(text)
+    assert calc.data_through(text) == "2026-09"
+    p = calc.panel(secs, cfg.GROWTH, cfg.VALUE, cfg.SECTIONS, cfg.Z_MIN_MONTHS)
+    # book / price is French's June figure moved by the return since June: July = June figure / (1 + July return)
+    jul = pd.Timestamp("1990-07-31")
+    bm = calc.section(secs, cfg.SECTIONS["bm"])
+    assert p.at[jul, "bm_v"] == pytest.approx(bm.at[jul, cfg.VALUE] / (1 + p.at[jul, "ret_v"]))
+    aug = pd.Timestamp("1990-08-31")
+    assert p.at[aug, "bm_g"] == pytest.approx(bm.at[aug, cfg.GROWTH] / ((1 + p.at[jul, "ret_g"]) * (1 + p.at[aug, "ret_g"])))
+    assert p["inv_gap"].loc[:"1963-06"].isna().all() and p["inv_gap"].loc["1963-07":].notna().all()
+    # z-scores use only earlier months: changing the future leaves the past alone
+    x = pd.Series(np.random.default_rng(0).normal(size=300))
+    z1 = calc.expanding_z(x, 120)
+    x2 = x.copy(); x2.iloc[200:] += 50
+    assert z1.iloc[:200].equals(calc.expanding_z(x2, 120).iloc[:200]) and z1.iloc[:120].isna().all()
+    # a month-end reading is held through the next month, or lag months later
+    idx = pd.date_range("2000-01-31", periods=6, freq="ME")
+    state = pd.Series(["V", "G", "G", "V", "V", "V"], index=idx)
+    g, v = pd.Series(0.01, index=idx), pd.Series(-0.01, index=idx)
+    bt = calc.backtest(state, g, v, cost=0.0)
+    assert bt["rot"].round(4).tolist() == [-0.01, 0.01, 0.01, -0.01, -0.01]
+    assert calc.backtest(state, g, v, cost=0.001, lag=1)["sw"].sum() == 2
+    yearly = calc.once_a_year(pd.Series(["G"] * 6 + ["V"] + ["G"] * 11, index=pd.date_range("2001-01-31", periods=18, freq="ME")))
+    assert (yearly.loc["2001-07":"2002-06"] == "V").all() and yearly.loc[:"2001-06"].isna().all()  # no July reading yet
+    # calibration finds French's reading a year later
+    m = pd.date_range("2010-01-31", periods=120, freq="ME")
+    live = pd.Series(np.random.default_rng(1).normal(size=120), index=m)
+    french = pd.Series(np.r_[np.zeros(12), 2 * live.iloc[:-12].to_numpy() + 1], index=m)
+    cal = calc.calibrate(french, live, lead=12)
+    assert cal["corr"] == pytest.approx(1.0) and cal["slope"] == pytest.approx(2.0) and cal["intercept"] == pytest.approx(1.0)
+
+
+def _fake_style_gaps(store):
+    """TickerLake's style/gaps (fake, same schema)."""
+    import numpy as np
+    rng = np.random.default_rng(3)
+    dates = list(pd.date_range("2012-12-31", "2026-10-31", freq="BME")) + [pd.Timestamp("2026-11-13")]
+    n = len(dates)
+    g, v = 0.10 + 0.04 * rng.standard_normal(n), 0.05 + 0.02 * rng.standard_normal(n)
+    store.save_frame("style", "gaps", pd.DataFrame({
+        "date": dates, "growth_ag": g, "value_ag": v, "growth_ag_cover": 0.97, "value_ag_cover": 0.95,
+        "growth_bp": 0.1, "value_bp": 0.8, "growth_roe": 0.35, "value_roe": 0.1, "growth_n": 130, "value_n": 130,
+        "ag_gap": g - v, "roe_gap": 0.25, "value_spread": np.log(8.0)}))
+
+
+def test_growth_value_job_and_page(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    from core import store
+    from modules.growth_value import job
+    _fake_style_gaps(store)
+    s = job.run(demo=True, log=lambda *a: None)
+    assert s["now"]["signal"] in ("value", "growth")
+    assert s["annual"]["inv"]["all"]["t"] > 2           # the demo plants the relation
+    assert s["live"]["available"] and s["live"]["calibration"]["lead"] == 12
+    assert {e["pair"] for e in s["etf"]} == {"VUG/VTV", "MGK/VTV"}
+    page = AppTest.from_file(str(ROOT / "modules" / "growth_value" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    text = " ".join(m.value for m in page.markdown)
+    assert "Acting late costs a lot" in text and "about 45" in text
+
+
+def test_growth_value_page_without_data(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "growth_value" / "page.py"), default_timeout=60).run()
+    assert not page.exception and page.info

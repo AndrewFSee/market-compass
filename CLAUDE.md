@@ -267,6 +267,23 @@ Publishers are thin: they call the project's own validated functions, never re-i
   ends. `scripts/fix_task_timezones.ps1` strips the offset so they follow local time; S4U tasks
   (HubRefresh, DailyScraper, PrecloseScraper, TickerLake-Daily) need an elevated prompt.
 
+## Growth vs value (modules/growth_value)
+- Job "growth_value" (after "style"): downloads Ken French's monthly 2x3 size / book-to-market file (`FRENCH_URL`,
+  0.6 MB), builds for large growth (BIG LoBM) vs large value (BIG HiBM) the value spread (French's June BE/ME moved by
+  each month's return since June), the investment gap (growth minus value asset growth, FY t-1 vs t-2, from July t) and
+  the profitability gap; z-scores against earlier months only (>= 10 years). Rule: value when the investment-gap z > 0.
+  Backtests on time and 2/4/6 months late (French posts July data ~October), once a year, and on VUG/VTV, MGK/VTV
+  (Yahoo). `calc.py` is pure; `demo.py` writes a French-format file with a planted relation.
+- Measured 2026-11-14 (the job's own numbers, which the page states): rule +3.2%/yr over 50/50 (t 3.7) 1974-2026,
+  +1.5 (t 1.5) before 2000, +4.9 (t 3.5) after; 4 months late +2.2 (t 2.4); ETFs +1.9-2.0 (t 1.5-1.7). One reading per
+  July vs the next August-July: t 3.3, without 1998-2001 t 1.8, positive in 6 of 6 decades (the research script's
+  4.1 / 2.75 counted July itself, the month of the reading). Best of ~45 growth/value timing ideas tried (`TRIES`).
+- Live version: TickerLake's style job publishes `style/gaps` (`style.style_gaps`: members with positive book split at the
+  30th / 70th book / price percentile by count, cap-weighted 4-quarter log asset growth clipped 2.5/97.5%, aggregate
+  B/P and ROE). It runs ~12 months ahead of French's (French fixes each July from the prior fiscal year): corr 0.17 same
+  month, 0.48 with French 12 months later (growth side 0.69, value side 0.19, different universe), so the page shows it
+  as an "early estimate" calibrated on French a year later (`LIVE_LEAD_MONTHS`), never as the signal.
+
 ## Look-alikes (modules/analogs)
 - Job "analogs" runs after "market" (reads `market/long_history` and `credit/spreads`, no
   network). `engine.py` is pure: `build_state` (features in `config.FEATURES`, each shifted by
@@ -336,6 +353,15 @@ Publishers are thin: they call the project's own validated functions, never re-i
   T 63). Best implementable variant chosen on 2001-13 (Kalman F 126, k 1, next open, T 63): 2014-26 t 1.4, ~3 bp/month
   on committed capital, spread over 2,600 pairs (largest in foreign-country and commodity ETFs, i.e. time-zone
   staleness); at 10 bp/side ~0. Intraday timing untestable (1-minute bars only since 2026-08-27). No page built.
+- Growth/value timing, research only (2026-11-14, scratch `rot/improve.py`, not a job): Ken French large growth vs
+  large value (BIG LoBM / BIG HiBM, daily 1926-2026-09), signal at the close, trade next close, 10 bp per switch, vs a
+  50/50 blend and vs a constant mix with the same average growth share. Contrarian on the 50-day deviation of log G/V
+  -0.65%/yr (t -0.9), timing ~0; trend did better before 2000 (ratio > 200-day avg +1.5, t 2.1; Kalman slope +1.8, t 2.5;
+  variance-ratio switch +1.4, t 1.8) but ~0 since 2000 and on VUG/VTV, MGK/VTV. Walk-forward ML (logistic, boosted trees,
+  random forest; price, rates, credit, inflation, + macro panel), retrained each January: rank IC 0.00-0.05, accuracy ~50%,
+  best +1.1%/yr t 1.3; the macro panel made it worse. Credit spread widening 6m -> growth +1.2 (t 1.5). Nothing tradable.
+  Fundamentals (`rot/improve_vs*.py`): the investment gap is the one signal that held up; built as the Growth vs
+  Value page (see its section below).
 - Possible additions: put/call ratio component, 52-week high/low
   history panel, sector/factor relative-strength analysis page, alerts when a gauge
   crosses a band.

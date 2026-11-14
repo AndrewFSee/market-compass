@@ -68,6 +68,7 @@ PAGES = {
     ],
     "Research": [
         {"path": "modules/analogs/page.py", "title": "Look-alikes", "icon": ":material/history:"},
+        {"path": "modules/growth_value/page.py", "title": "Growth vs Value", "icon": ":material/swap_horiz:"},
         {"path": "modules/analyst/page.py", "title": "Analyst", "icon": ":material/psychology:"},
     ],
     "Portfolio": [
@@ -113,6 +114,8 @@ JOBS = {
     "events": {"cmd": [venv_python(TICKERLAKE), "scripts/publish_events_to_hub.py"], "cwd": str(TICKERLAKE)},
     # value / growth scores of S&P 500 members from SEC filings in the lake, plus their backtest (~3 min)
     "style": {"cmd": [venv_python(TICKERLAKE), "scripts/publish_style_to_hub.py"], "cwd": str(TICKERLAKE)},
+    # growth vs value timing: Ken French's portfolios (download) + the style job's SEC-based gaps, so after "style"
+    "growth_value": "modules.growth_value.job:run",
     # repurchases from SEC filings + estimated blackout windows (release dates: TickerLake backfill_earnings_releases.py)
     "buybacks": {"cmd": [venv_python(TICKERLAKE), "scripts/publish_buybacks_to_hub.py"], "cwd": str(TICKERLAKE)},
     # buyback announcements: SentIQ finds candidate 8-K passages in what it already collected (no SEC calls),
