@@ -18,9 +18,15 @@ _HAS_WIDTH = "width" in inspect.signature(st.plotly_chart).parameters
 
 
 # ----------------------------------------------------------------- compat
-def chart(fig, key: str | None = None) -> None:
+def chart(fig, key: str | None = None, zoom: bool = False) -> None:
+    """zoom=True: scroll wheel zooms, drag pans, double-click resets (plus a small toolbar)."""
     kw = {"width": "stretch"} if _HAS_WIDTH else {"use_container_width": True}
-    st.plotly_chart(fig, key=key, config={"displayModeBar": False}, **kw)
+    config = {"displayModeBar": False}
+    if zoom:
+        fig.update_layout(dragmode="pan")
+        config = {"scrollZoom": True, "displayModeBar": True, "displaylogo": False,
+                  "modeBarButtonsToRemove": ["select2d", "lasso2d", "toImage", "autoScale2d"]}
+    st.plotly_chart(fig, key=key, config=config, **kw)
 
 
 def table(df, **kwargs) -> None:

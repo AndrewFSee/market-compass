@@ -671,3 +671,98 @@ def period_returns(closes: pd.DataFrame, timeframes: list[str]) -> pd.DataFrame:
         r["date"] = d
         rows[col] = r
     return pd.DataFrame.from_dict(rows, orient="index")
+
+
+# ----------------------------------------------------------------- global markets & headline economy
+def market_snapshot(closes: pd.DataFrame, spark_weeks: int = 52) -> pd.DataFrame:
+    """Per ticker: last close; % change over 1 day, 1 week, month-to-date, year-to-date and 1 year;
+    the 52-week range and where the last close sits in it (0 = low, 100 = high); % distance from
+    the 50- and 200-day averages and whether the 200-day is higher than 20 sessions ago; 14-day
+    RSI; and the last ``spark_weeks`` weekly closes for a sparkline."""
+    rows = {}
+    for col in closes.columns:
+        s = closes[col].dropna()
+        if len(s) < 30:
+            continue
+        last, d = float(s.iloc[-1]), s.index[-1]
+
+        def change(base) -> float:
+            return (last / base - 1) * 100 if base and np.isfinite(base) else np.nan
+
+        def back(n: int) -> float:
+            return s.iloc[-1 - n] if len(s) > n else np.nan
+
+        def before(start: pd.Timestamp) -> float:
+            prior = s[s.index < start]
+            return prior.iloc[-1] if len(prior) else np.nan
+
+        year = s[s.index > d - pd.DateOffset(years=1)]
+        lo, hi = float(year.min()), float(year.max())
+        sma50, sma200 = s.rolling(50).mean(), s.rolling(200).mean()
+        rising = (bool(sma200.iloc[-1] > sma200.iloc[-21])
+                  if len(sma200.dropna()) > 20 else None)
+        rows[col] = {
+            "date": d, "last": last, "1D": change(back(1)), "1W": change(back(5)),
+            "MTD": change(before(pd.Timestamp(d.year, d.month, 1))), "YTD": change(before(pd.Timestamp(d.year, 1, 1))),
+            "1Y": change(back(252)) if len(s) > 252 else np.nan,
+            "low_52w": lo, "high_52w": hi, "range_pos": (last - lo) / (hi - lo) * 100 if hi > lo else np.nan,
+            "vs_50d": change(sma50.iloc[-1]), "vs_200d": change(sma200.iloc[-1]), "sma200_rising": rising,
+            "rsi14": float(rsi(s).iloc[-1]),
+            "spark": s.resample("W-FRI").last().dropna().tail(spark_weeks).round(4).tolist(),
+        }
+    return pd.DataFrame.from_dict(rows, orient="index")
+
+
+def headline_series(fred: dict, spec: dict) -> pd.Series | None:
+    """One headline number's history, transformed as ``spec['kind']`` says."""
+    parts = [_clean_series(fred.get(sid)) for sid in spec["series"]]
+    if any(p is None or p.empty for p in parts):
+        return None
+    s = parts[0]
+    kind = spec["kind"]
+    if kind in ("range", "spread"):
+        both = pd.concat(parts, axis=1, join="inner").dropna()
+        s = both.iloc[:, 1] if kind == "range" else both.iloc[:, 0] - both.iloc[:, 1]
+    elif kind == "yoy":
+        s = (s / s.shift(12) - 1) * 100
+    elif kind == "mom_diff":
+        s = s.diff()
+    elif kind == "saar":
+        s = ((s / s.shift(1)) ** 4 - 1) * 100
+    return s.dropna()
+
+
+def headline_econ(fred: dict, specs: list[dict], spark: int = 24) -> list[dict]:
+    """Latest value of each headline number with the one before it. Daily series compare with a
+    month earlier and their sparkline uses month-ends; monthly and quarterly series compare with
+    the previous release. A range (the Fed's target) reports its lower bound too."""
+    out = []
+    for spec in specs:
+        item = {k: spec.get(k) for k in ("key", "label", "unit", "kind", "release")}
+        item["up_is_good"] = spec.get("up_is_good", True)
+        s = headline_series(fred, spec)
+        if s is None or s.empty:
+            out.append({**item, "value": None})
+            continue
+        raw = _clean_series(fred.get(spec["series"][0]))   # spacing of the release, before transforms
+        gap = pd.Series(raw.index).diff().dt.days.median()
+        daily = gap < 7
+        d = s.index[-1]
+        if daily:
+            prior_s = s[s.index <= d - pd.DateOffset(months=1)]
+            prior = float(prior_s.iloc[-1]) if len(prior_s) else None
+            line = s.resample("ME").last().dropna()
+            line.iloc[-1] = s.iloc[-1]
+        else:
+            prior = float(s.iloc[-2]) if len(s) > 1 else None
+            line = s
+        freq = "daily" if daily else ("quarterly" if gap > 60 else "monthly")
+        item.update({"value": float(s.iloc[-1]), "prior": prior,
+                     "change": float(s.iloc[-1]) - prior if prior is not None else None,
+                     "date": d.strftime("%Y-%m-%d"), "freq": freq,
+                     "spark": [round(float(x), 4) for x in line.tail(spark)]})
+        if spec["kind"] == "range":
+            lo = _clean_series(fred.get(spec["series"][0]))
+            item["low"] = float(lo.loc[:d].iloc[-1]) if lo is not None and len(lo.loc[:d]) else None
+        out.append(item)
+    return out

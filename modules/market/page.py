@@ -200,6 +200,63 @@ if links:
                      "so it flatters the gauge.")
         st.caption(note)
 
+# ================================================================= headline economy
+def headline_value(item: dict) -> str:
+    v, unit = item["value"], item["unit"]
+    if item["kind"] == "range" and item.get("low") is not None:
+        return f"{item['low']:.2f}–{v:.2f}%"
+    if unit == "k":
+        return f"{v:+,.0f}k"
+    if unit == "pts":
+        return f"{v:+.2f} pts"
+    return f"{v:.2f}%" if item["freq"] == "daily" else f"{v:.1f}%"
+
+
+def headline_period(item: dict) -> str:
+    d = pd.Timestamp(item["date"])
+    if item["freq"] == "quarterly":
+        return f"Q{d.quarter} {d.year}"
+    return f"{d:%b %Y}" if item["freq"] == "monthly" else f"{d:%b %d}"
+
+
+def next_release(key: str | None, calendar: pd.DataFrame | None):
+    if not key or calendar is None or calendar.empty:
+        return None
+    today = pd.Timestamp.today().normalize()
+    dates = pd.to_datetime(calendar.loc[calendar["release_key"] == key, "release_date"])
+    dates = dates[dates >= today]
+    return dates.min() if len(dates) else None
+
+
+st.subheader("Economy at a glance")
+headline = (load("headline_econ", "json") or {}).get("items") or []
+shown = [h for h in headline if h.get("value") is not None]
+if not shown:
+    st.info("No headline economic data yet (FRED). Rerun the market job.")
+else:
+    calendar = load_other("events", "calendar")
+    cols = st.columns(3)
+    for i, h in enumerate(shown):
+        prev = "1 month ago" if h["freq"] == "daily" else ("prior quarter" if h["freq"] == "quarterly"
+                                                          else "prior month")
+        digits = 0 if h["unit"] == "k" else (2 if h["freq"] == "daily" or h["unit"] == "pts" else 1)
+        unit = "k" if h["unit"] == "k" else " pts"  # changes in a rate are percentage points
+        delta = None if h.get("change") is None else f"{h['change']:+,.{digits}f}{unit} vs {prev}"
+        nxt = next_release(h.get("release"), calendar)
+        flat = h.get("change") is not None and abs(h["change"]) < 1e-9
+        color = "off" if flat else {True: "normal", False: "inverse"}.get(h.get("up_is_good"), "off")
+        if flat:
+            delta = f"unchanged vs {prev}"
+        with cols[i % 3]:
+            st.metric(f"{h['label']} · {headline_period(h)}", headline_value(h), delta=delta, delta_color=color,
+                      delta_arrow="off" if flat else "auto",
+                      chart_data=h.get("spark"), chart_type="line", border=True,
+                      help=(f"Next release {nxt:%a %b %d}" if nxt is not None else "No release date in the calendar")
+                      + f". FRED {h['kind']} of the latest {h['freq']} figure.")
+    st.caption("Latest published figures from FRED (CPI and PCE are year-over-year; GDP is the latest quarter's "
+               "growth at an annual rate; payrolls are the monthly change). Hover a tile for its next release date "
+               "from the Events calendar. Lines show the last two years.")
+
 # ================================================================= breadth & style
 st.subheader("Breadth & style")
 left, right = st.columns([1, 1.2])
@@ -786,8 +843,13 @@ with st.container(border=True):
                 with col:
                     ui.chart(fig, key=f"disp_{key}")
                     st.caption(f"Now {s.iloc[-1]:.2f}: higher than {pct:.0f}% of weeks since {s.index[0]:%Y}.")
-            st.caption("High dispersion with low correlation = sectors going their own way, when rotation matters "
-                       "most. Low dispersion with high correlation = everything moves together with the market.")
+            st.caption("Dispersion is how far apart the sectors' 4-week returns are; correlation, how much they move "
+                       "together. Neither one forecasts a change in leadership. Tested on the nine original sector SPDRs "
+                       "since 2000 (340 non-overlapping 4-week periods, measured 2026-11-13): high dispersion and low "
+                       "correlation left the link between last month's and next month's relative returns unchanged "
+                       "(t 0.3 each). Last month's leaders trail slightly the next month whatever the dispersion "
+                       "(rank correlation -0.04). One thing correlation does foreshadow: unusually high correlation "
+                       "came before wider sector moves the next month (t -3.0), i.e. stress, not direction.")
 
 # ================================================================= cross-asset
 st.markdown("##### Cross-asset checks")
@@ -834,6 +896,57 @@ with st.container(border=True):
         ui.chart(fig, key="cross_asset_chart")
         st.caption("A rotation is more believable when the driver behind it agrees, but check the link columns "
                    "first: a textbook relationship that has been near zero for a year isn't confirming anything.")
+
+# ================================================================= global markets
+st.subheader("Global markets")
+gm = load("global_markets")
+if gm is None or gm.empty:
+    st.info("No global market data yet. Rerun the market job.")
+else:
+    groups = [g for g in dict.fromkeys(gm["group"])]
+    c1, c3 = st.columns(2)
+    with c1:
+        group = ui.choice("Markets", groups, key="gm_group")
+    with c3:
+        period = ui.choice("Period", ["1D", "1W", "MTD", "YTD", "1Y"], key="gm_period", default="YTD")
+    sub = gm[gm["group"] == group]
+    regions = list(dict.fromkeys(sub["region"]))
+    picked = st.multiselect("Region", regions, default=[], key=f"gm_region_{group}", placeholder="All regions",
+                            label_visibility="collapsed")
+    if picked:
+        sub = sub[sub["region"].isin(picked)]
+    bars = sub.dropna(subset=[period]).sort_values(period)
+    fig = go.Figure(go.Bar(
+        x=bars[period], y=bars["name"], orientation="h",
+        marker_color=[ui.PALETTE["teal"] if v >= 0 else ui.PALETTE["red"] for v in bars[period]],
+        customdata=bars["ticker"], hovertemplate="%{y} (%{customdata}): %{x:+.2f}%<extra></extra>"))
+    fig.add_vline(x=0, line_width=1, line_color=ui.PALETTE["grey"])
+    fig.update_layout(height=max(220, 24 * len(bars) + 40), margin={"l": 0, "r": 0, "t": 10, "b": 0},
+                      xaxis={"ticksuffix": "%"}, bargap=0.25)
+    ui.chart(fig, key="gm_bars")
+
+    view = pd.DataFrame({
+        "Market": sub["name"] + " (" + sub["ticker"] + ")",
+        "1D": sub["1D"], "MTD": sub["MTD"], "YTD": sub["YTD"], "1Y": sub["1Y"],
+        "52-wk range": sub["range_pos"], "vs 200-day": sub["vs_200d"],
+        "200d": sub["sma200_rising"].map({True: "↑", False: "↓"}),
+        "RSI 14": sub["rsi14"], "Last year": sub["spark"].map(lambda x: list(x) if x is not None else [])})
+    pct = ["1D", "MTD", "YTD", "1Y", "vs 200-day"]
+    styled = view.style.map(lambda v: f"color: {ui.PALETTE['teal']}" if pd.notna(v) and v > 0
+                            else (f"color: {ui.PALETTE['red']}" if pd.notna(v) and v < 0 else ""), subset=pct)
+    num = st.column_config.NumberColumn
+    ui.table(styled, hide_index=True, height=35 * (len(view) + 1) + 3, column_config={
+        "Market": st.column_config.TextColumn(width="medium"),
+        **{c: num(format="%+.1f%%", width="small") for c in pct}, "1D": num(format="%+.2f%%", width="small"),
+        "52-wk range": st.column_config.ProgressColumn(
+            min_value=0, max_value=100, format="%.0f", width="small",
+            help="Where the last close sits between the 52-week low (0) and high (100)"),
+        "200d": st.column_config.TextColumn(width="small", help="200-day average higher (↑) or lower (↓) than 20 sessions ago"),
+        "RSI 14": num(format="%.0f", width="small", help="14-day relative strength index: above 70 stretched up, below 30 down"),
+        "Last year": st.column_config.LineChartColumn(width="small", help="Weekly closes over the last year")})
+    st.caption(f"US-listed ETFs, total return (Yahoo's dividend-adjusted closes) through {pd.Timestamp(gm['date'].max()):%b %d, %Y}. "
+               "Descriptive: trend and RSI readings like these were tested on sector ETFs (Rotation section) and "
+               "didn't predict which would do better next.")
 
 # ================================================================= treemap
 st.subheader("Market map")

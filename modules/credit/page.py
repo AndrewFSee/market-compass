@@ -7,7 +7,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from core import apps, store, ui
-from modules.credit import config as cfg
+from modules.credit import calc, config as cfg
 
 MODULE = cfg.MODULE
 
@@ -174,6 +174,32 @@ if tiers:
                           annotation_text="average", annotation_position="top left")
             ui.chart(fig, key="cr_decomp")
             st.caption("A rising gap means the weakest credits are cracking before the rest of the market.")
+
+    if tier_hist is not None and len(tier_hist.columns) > 2:
+        with st.container(border=True):
+            st.markdown(f"**Gaps between ratings: change over {cfg.GAP_CHANGE_DAYS // 7} weeks**")
+            gap, change, base = calc.tier_gaps(tier_hist, cfg.GAP_CHANGE_DAYS)
+            rows, cols_ = list(change.index[1:]), list(change.columns[:-1])
+            z = change.loc[rows, cols_]
+            g = gap.loc[rows, cols_]
+            text = [[("" if pd.isna(c) else f"{c:+.0f}") for c in r] for r in z.to_numpy()]
+            custom = [[("" if pd.isna(v) else f"{v:.0f}") for v in r] for r in g.to_numpy()]
+            zmax = max(float(z.abs().max().max()), 1.0)
+            fig = go.Figure(go.Heatmap(
+                z=z.to_numpy(), x=cols_, y=rows, text=text, texttemplate="%{text}", customdata=custom,
+                zmin=-zmax, zmax=zmax, zmid=0, showscale=False, xgap=2, ygap=2,
+                textfont={"color": "#FFFFFF", "size": 13},
+                colorscale=[[0, ui.PALETTE["teal"]], [0.5, "#5C6670"], [1, ui.PALETTE["red"]]],
+                hovertemplate="%{y} − %{x}: %{customdata} bps now, %{text} bps over "
+                              f"{cfg.GAP_CHANGE_DAYS // 7} weeks<extra></extra>"))
+            fig.update_layout(height=300, margin={"l": 0, "r": 0, "t": 4, "b": 0},
+                              yaxis={"autorange": "reversed", "showgrid": False},
+                              xaxis={"side": "top", "showgrid": False})
+            ui.chart(fig, key="cr_gap_matrix")
+            st.caption(f"Each cell is the row tier's spread minus the column tier's, change in bps since "
+                       f"{base:%d %b %Y}; hover for today's gap. Red = the riskier tier widened relative to the "
+                       "safer one (decompression), green = it caught up. A whole red row points at that tier; "
+                       "a red block in the bottom rows means stress concentrated in high yield.")
 
 # ================================================================= fed liquidity
 liq = summary.get("liquidity")

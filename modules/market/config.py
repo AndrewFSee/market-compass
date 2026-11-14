@@ -167,6 +167,78 @@ def all_etf_tickers() -> list[str]:
     return list(dict.fromkeys(tickers))  # de-duplicate, keep order
 
 
+# ---------------------------------------------------------------- global markets
+# Descriptive table of other markets (US-listed ETFs, so one session and one currency).
+# (ticker, name, group, region); groups and regions are the page's filters.
+GLOBAL_MARKETS = [
+    ("SPY", "S&P 500", "Equities", "US"), ("RSP", "S&P 500 equal weight", "Equities", "US"),
+    ("QQQ", "Nasdaq-100", "Equities", "US"), ("DIA", "Dow Jones 30", "Equities", "US"),
+    ("IWM", "Russell 2000", "Equities", "US"), ("MDY", "S&P MidCap 400", "Equities", "US"),
+    ("ACWI", "All-world", "Equities", "Global"), ("EFA", "Developed ex-US", "Equities", "Global"),
+    ("EEM", "Emerging markets", "Equities", "Global"),
+    ("VGK", "Europe", "Equities", "Europe"), ("EWU", "United Kingdom", "Equities", "Europe"),
+    ("EWG", "Germany", "Equities", "Europe"), ("EWQ", "France", "Equities", "Europe"),
+    ("EWL", "Switzerland", "Equities", "Europe"), ("EWI", "Italy", "Equities", "Europe"),
+    ("EWP", "Spain", "Equities", "Europe"),
+    ("EWJ", "Japan", "Equities", "Asia/Pacific"), ("MCHI", "China", "Equities", "Asia/Pacific"),
+    ("FXI", "China large caps", "Equities", "Asia/Pacific"), ("EWH", "Hong Kong", "Equities", "Asia/Pacific"),
+    ("EWT", "Taiwan", "Equities", "Asia/Pacific"), ("EWY", "South Korea", "Equities", "Asia/Pacific"),
+    ("INDA", "India", "Equities", "Asia/Pacific"), ("EWA", "Australia", "Equities", "Asia/Pacific"),
+    ("EWS", "Singapore", "Equities", "Asia/Pacific"),
+    ("EWC", "Canada", "Equities", "Americas"), ("EWZ", "Brazil", "Equities", "Americas"),
+    ("EWW", "Mexico", "Equities", "Americas"),
+    ("BIL", "T-bills 1-3 mo", "Bonds", "US Treasuries"), ("SHY", "Treasuries 1-3 yr", "Bonds", "US Treasuries"),
+    ("IEI", "Treasuries 3-7 yr", "Bonds", "US Treasuries"), ("IEF", "Treasuries 7-10 yr", "Bonds", "US Treasuries"),
+    ("TLT", "Treasuries 20+ yr", "Bonds", "US Treasuries"), ("TIP", "TIPS", "Bonds", "US Treasuries"),
+    ("AGG", "US aggregate", "Bonds", "US credit"), ("MBB", "Mortgage-backed", "Bonds", "US credit"),
+    ("LQD", "IG corporates", "Bonds", "US credit"), ("HYG", "High-yield corporates", "Bonds", "US credit"),
+    ("MUB", "Municipals", "Bonds", "US credit"),
+    ("BNDX", "International (hedged)", "Bonds", "International"), ("EMB", "Emerging-market USD", "Bonds", "International"),
+    ("DBC", "Broad commodities", "Commodities", "Broad"), ("GLD", "Gold", "Commodities", "Metals"),
+    ("SLV", "Silver", "Commodities", "Metals"), ("CPER", "Copper", "Commodities", "Metals"),
+    ("PPLT", "Platinum", "Commodities", "Metals"), ("USO", "WTI crude oil", "Commodities", "Energy"),
+    ("BNO", "Brent crude oil", "Commodities", "Energy"), ("UNG", "Natural gas", "Commodities", "Energy"),
+    ("DBA", "Agriculture", "Commodities", "Agriculture"), ("CORN", "Corn", "Commodities", "Agriculture"),
+    ("WEAT", "Wheat", "Commodities", "Agriculture"),
+    ("UUP", "US dollar index", "Currencies", "Currencies"), ("FXE", "Euro", "Currencies", "Currencies"),
+    ("FXY", "Japanese yen", "Currencies", "Currencies"), ("FXB", "British pound", "Currencies", "Currencies"),
+    ("IBIT", "Bitcoin", "Currencies", "Crypto"),
+]
+GLOBAL_PERIOD = "2y"        # enough for 1-year returns and a 200-day average a year back
+GLOBAL_SPARK_WEEKS = 52     # weekly closes kept for the table's sparkline
+
+
+def global_tickers() -> list[str]:
+    return [t for t, *_ in GLOBAL_MARKETS]
+
+
+# ---------------------------------------------------------------- headline economy
+# Shown as tiles; not part of any gauge. kind: level (last value), yoy (% vs 12 months
+# earlier), mom_diff (change vs prior month, payrolls in thousands), saar (quarterly growth,
+# annualized), spread (a - b). "release" links to TickerLake's calendar for the next date.
+# CPI uses the unadjusted index: BLS's published 12-month change is computed on it.
+# up_is_good colours the change: True green when up, False green when down, None neutral.
+HEADLINE_ECON = [
+    {"key": "fed_funds", "label": "Fed funds target", "series": ["DFEDTARL", "DFEDTARU"], "kind": "range",
+     "unit": "%", "release": "fomc", "up_is_good": None},
+    {"key": "ten_year", "label": "10Y Treasury", "series": ["DGS10"], "kind": "level", "unit": "%", "up_is_good": None},
+    {"key": "curve", "label": "10Y - 2Y spread", "series": ["DGS10", "DGS2"], "kind": "spread", "unit": "pts", "up_is_good": None},
+    {"key": "unemployment", "label": "Unemployment", "series": ["UNRATE"], "kind": "level", "unit": "%",
+     "release": "jobs", "up_is_good": False},
+    {"key": "payrolls", "label": "Payrolls, monthly change", "series": ["PAYEMS"], "kind": "mom_diff", "unit": "k",
+     "release": "jobs"},
+    {"key": "cpi", "label": "CPI, y/y", "series": ["CPIAUCNS"], "kind": "yoy", "unit": "%", "release": "cpi",
+     "up_is_good": False},
+    {"key": "core_cpi", "label": "Core CPI, y/y", "series": ["CPILFENS"], "kind": "yoy", "unit": "%",
+     "release": "cpi", "up_is_good": False},
+    {"key": "core_pce", "label": "Core PCE, y/y", "series": ["PCEPILFE"], "kind": "yoy", "unit": "%",
+     "release": "pce", "up_is_good": False},
+    {"key": "gdp", "label": "Real GDP, q/q annualized", "series": ["GDPC1"], "kind": "saar", "unit": "%",
+     "release": "gdp"},
+]
+HEADLINE_SPARK = 24         # observations kept per tile for its sparkline
+
+
 # ---------------------------------------------------------------- FRED
 # Credit spreads (ICE BofA option-adjusted spreads, percentage points).
 HY_OAS = "BAMLH0A0HYM2"
@@ -227,6 +299,7 @@ def all_fred_ids() -> list[str]:
     ids += [f["series"] for f in LIQUIDITY_FACTORS if f["series"] != "NETLIQ"]
     ids += [e["id"] for e in ECON_INDICATORS]
     ids += [c["driver"] for c in CROSS_ASSET if c["kind"] == "fred"]
+    ids += [sid for h in HEADLINE_ECON for sid in h["series"]]
     return list(dict.fromkeys(ids))
 
 

@@ -77,10 +77,25 @@ scores.
   weekly changes, since ~1999): oil/XLE +0.58, HY spread/offense-defense +0.42, 10Y/XLRE +0.38,
   10Y/XLU +0.28, curve/XLF +0.17, copper-gold/XLB +0.14. Commodity drivers are Yahoo futures
   (CL=F, HG=F, GC=F), downloaded with the rotation history.
+- Sector dispersion (`indicators.dispersion`: std of 4-week sector returns, 63-day average pairwise
+  correlation). Measured 2026-11-13 (scratch script; 9 original SPDRs, 340 non-overlapping 4-week
+  periods since 2000, each measure z-scored on 52 weeks): no measure, including the spread of
+  technical-vote scores, moves leadership persistence (rank corr of last vs next 4-week return over
+  SPY, base -0.04; slopes +0.005..+0.021 per z, |t| < 1, ~0 both halves) or makes stretched sectors
+  revert more. Only link: high correlation -> wider dispersion next month (t -3.0). The page caption
+  states this; the old "rotation matters most" claim was removed.
 - Fund flows (`job.fund_flows`, `FLOW_*`): State Street NAV-history xlsx per sector SPDR (needs
   openpyxl), since 2003-12. Flow = change in shares x NAV; splits (Dec 2025 2-for-1s), each
   fund's first 63 days and days moving >50% of assets (XLRE's 2016 spin-off) are excluded;
   signals lag one day. Measured 2026-11-07: no predictive link in either half.
+- Global markets and headline economy (added 2026-11-13; descriptive, no gauge uses them):
+  `GLOBAL_MARKETS` (~57 US-listed ETFs: equities by region, bonds, commodities, currencies/bitcoin,
+  `GLOBAL_PERIOD` 2y download) -> `ind.market_snapshot` -> `global_markets` (returns 1D/1W/MTD/YTD/1Y on
+  adjusted closes, 52-wk range position, vs 50/200-day, 200-day slope, RSI-14, weekly sparkline).
+  `HEADLINE_ECON` (fed funds target range, 10Y, 10Y-2Y, unemployment, payrolls change, CPI/core CPI/
+  core PCE y/y, real GDP q/q SAAR) -> `ind.headline_econ` -> `headline_econ.json`; daily series compare
+  with a month earlier, others with the prior release; the page takes each next release date from
+  TickerLake's `events/calendar` (`release` key).
 - `core.store` retries `os.replace` on PermissionError: on Windows a reader (the running hub)
   briefly blocks replacing a file, which once failed a market run.
 
@@ -172,6 +187,62 @@ Publishers are thin: they call the project's own validated functions, never re-i
   and VXN prev close. Direction (median vs Yahoo 11:30 level, ~680 days): S&P slope +0.5 (t 1.2),
   Nasdaq -0.1 (t -1.2). Kalshi minute candles exist only for minutes with a change; historical
   per-market candles use `close`, live ones `close_dollars`; ~4 requests/s.
+- **style** (TickerLake, added 2026-11-13) -> `data/style/`: stocks (latest value/growth, quadrant, each
+  factor raw and z), stock_history and sectors (month-ends since 2012-12 + latest session), summary.json
+  (incl. the backtest). Method in TickerLake `tickerlake.analytics.style` (tests `tests/test_style.py`):
+  CRSP-style factors from `filings_facts`, first-reported values usable the day after filing (a quarter
+  counts only once every input it uses has been filed: 22% of quarters had an input, e.g. assets or cash
+  flow, first filed as a later comparative, median 282 days after net income), quarterly flows from
+  3-month or differenced YTD facts, share counts (period averages, not differenced) on today's split
+  basis; value = B/P, trailing E/P, S/P, D/P; growth = 3-yr EPS and sales-per-share trend, capex/assets,
+  ROA. The analyst-forecast factors are left out until the estimate snapshots (since 2026-11-07) have
+  history. Each factor clipped 2.5/97.5%, z vs the cap-weighted mean; latest caps from
+  `market/market_caps` when present. ~2.5 min per run (1M facts). Backtest (2026-11-13, 167 month-ends,
+  353-503 members with prices): stock-level rank IC next 1m value +0.004 (t 0.2), growth +0.004 (t 0.4),
+  ~0 both halves; cheap-and-growing corner -0.17%/month (t -1.2); sector next-3m IC value -0.05 (t -1.0),
+  growth +0.07 (t 1.5). TickerLake's membership file has GICS sectors only for current members, so
+  removed members drop out of sector averages (never compare against sector medians for history: a
+  blank sector then flags exactly the stocks that later left the index). The page (Value & Growth) states
+  this from summary.json and calls itself descriptive; keep it that way if the recipe changes.
+- **buybacks** (TickerLake, added 2026-11-13) -> `data/buybacks/`: stocks (current members: last quarter's and
+  trailing-year buybacks from `PaymentsForRepurchaseOfCommonStock`, buyback yield, 1-yr split-adjusted share
+  count change, remaining authorization and when an increase was last reported, estimated blackout status,
+  reopen / next-shut dates, release behind them and its source), blackout_share (business days 2010 -> 90
+  days ahead, share of members and of today's cap estimated in blackout, `projected`), summary.json. Method in
+  TickerLake `tickerlake.analytics.buybacks` (tests `tests/test_buybacks.py`): window shuts 14 days before
+  the fiscal close, reopens 2 business days after the release. Release dates: TickerLake
+  `scripts/backfill_earnings_releases.py` (one-off, ~4 min; full SEC submissions incl. older pages, same
+  rule as the announcements stage: last Item 2.02 8-K 7..75 days after the close and before the 10-Q/10-K;
+  41.6k quarters, 630 companies, 97% matched, median 29 days) -> `data/earnings_releases/`, topped up
+  from the announcements stage's dated surprises; upcoming from Finnhub calendar rows, else the company's
+  median lag. Membership history starts 2010. Measured 2026-11-13 (scratch `style/buyback_test.py`; numbers
+  in `modules/buybacks/config.py` TEST, which the page states): share in blackout vs S&P next 20 days rank
+  corr +0.12 (t 1.5, the opposite of the "blackout = weak market" lore); next day t 0.6; heavy buyers (top
+  fifth, yield >~5%) open-minus-shut vs the rest +2.75 bp/day (t 1.2; 2010-17 +5.3, 2018-26 +1.3). Rerun
+  the backfill now and then (new companies; the stage only dates quarters with a Finnhub surprise).
+- **buyback_news** (SentIQ + Claude, added 2026-11-13) -> `data/buyback_news/`: candidates, classified,
+  announcements, classify_summary.json; shown in the Buybacks page's "Recently announced" section. No new
+  SEC fetcher (rate limits): SentIQ's `scripts/publish_buyback_candidates_to_hub.py` (job "buyback_news",
+  read-only over SentIQ's store) reads each stored 8-K's primary document + exhibits from its raw store
+  (`body_text` is truncated) and keeps passages where a share repurchase sits near an authorization /
+  program / increase / ASR / tender word (repo agreements dropped). Full rescan (`--rebuild`) took ~100 min
+  for 61k 8-Ks since 2019 -> 14.7k candidates (~400/month in 2026); daily runs rescan 3 days.
+  `modules/buybacks/news.py` (job "buyback_news_classify") has Claude Haiku 5.5 (thinking off, structured
+  output, no server-side fallback for Haiku) classify each candidate once, cached by accession: kind, first
+  disclosed here, amounts. Daily: last 30 days, at most 300 (~$0.0003 each, ~1.4 s serial). History via the
+  Batch API (`python -m modules.buybacks.news estimate|backfill --yes|collect`; estimate ~$1.74 for 14.7k);
+  paid runs need the user's OK. Opus 5.5 would cost ~40x (~$106 backfill, ~$130/yr). Checked 2026-11-13 on
+  300 filings: ~92% of flagged announcements were real first disclosures (misses: recaps of ASRs executed
+  earlier, "intent" to use remaining capacity); ~7% of verdicts change on a rerun. Announcements dedupe on
+  (company, amount) within 120 days. Backfill done 2026-11-13: 14.7k classified, $2.06 in total, 1,909
+  announcements. Event study the same day (scratch `bb_event.py` / `bb_open.py`; numbers in
+  `modules/buybacks/config.py` ANNOUNCE_TEST, which the page states): last close -> first close after the
+  filing +1.30% over SPY (t 7.5); in earnings releases +1.52% vs same-week earnings releases that only recap a
+  program (t 4.2); nothing after (next 20 / 60 days ~0); filed outside the session, next open -> close still
+  +0.41% (t 4.5, buyback-only 8-Ks) / +0.57% (t 2.6, in earnings releases), recaps ~0, before costs.
+  `tradable_at` is the next tradable moment (after-close filings map to the next 9:30); filing times
+  (`published_at`): 44% 6:00-9:30 ET, 49% 16:00-18:15, so only the evening half is on the page before the
+  open with the 18:15 refresh.
 - Projects are found next to the hub (`registry.project()`: `<name>` or `<name>/<name>`; override
   with `HUB_PROJECTS_DIR`). A job whose project or venv is missing is skipped, not failed.
 - Tests here use synthetic data in each publisher's schema; if a publisher's output changes,
@@ -186,9 +257,32 @@ Publishers are thin: they call the project's own validated functions, never re-i
   have no monthly trigger) and runs `scripts/rebuild_macro_panel.py`: deletes a features.partial.csv
   older than a day (resuming pins that run's FRED cache), keeps features.prev.csv and restores it
   if the new panel is shorter, then runs `run_jobs.py --only macro`. Log: `data/logs/macro_panel.log`.
+- `scripts/register_buyback_task.ps1` registers `\MarketCompass\BuybackPreOpen` (weekdays 9:20 AM, S4U, no
+  catch-up): `run_jobs.py --only buyback_news buyback_news_classify` (~20 s), so pre-open 8-Ks are on the
+  Buybacks page before 9:30. Checked 2026-11-13: SentIQ polls EDGAR every 2 min (live since 2026-10-13),
+  median 4 min from acceptance to first seen; 87% of 6:00-9:30 filings seen before the open. EDGAR
+  disseminates nothing after 17:30 ET, so later filings appear at ~6:00 next day (not a SentIQ gap); the one
+  real outage was 2026-10-28/29 (~250 filings hours late).
 - Task triggers created with a UTC offset (`...T16:30:00-04:00`) fire an hour early after DST
   ends. `scripts/fix_task_timezones.ps1` strips the offset so they follow local time; S4U tasks
   (HubRefresh, DailyScraper, PrecloseScraper, TickerLake-Daily) need an elevated prompt.
+
+## Growth vs value (modules/growth_value)
+- Job "growth_value" (after "style"): downloads Ken French's monthly 2x3 size / book-to-market file (`FRENCH_URL`,
+  0.6 MB), builds for large growth (BIG LoBM) vs large value (BIG HiBM) the value spread (French's June BE/ME moved by
+  each month's return since June), the investment gap (growth minus value asset growth, FY t-1 vs t-2, from July t) and
+  the profitability gap; z-scores against earlier months only (>= 10 years). Rule: value when the investment-gap z > 0.
+  Backtests on time and 2/4/6 months late (French posts July data ~October), once a year, and on VUG/VTV, MGK/VTV
+  (Yahoo). `calc.py` is pure; `demo.py` writes a French-format file with a planted relation.
+- Measured 2026-11-14 (the job's own numbers, which the page states): rule +3.2%/yr over 50/50 (t 3.7) 1974-2026,
+  +1.5 (t 1.5) before 2000, +4.9 (t 3.5) after; 4 months late +2.2 (t 2.4); ETFs +1.9-2.0 (t 1.5-1.7). One reading per
+  July vs the next August-July: t 3.3, without 1998-2001 t 1.8, positive in 6 of 6 decades (the research script's
+  4.1 / 2.75 counted July itself, the month of the reading). Best of ~45 growth/value timing ideas tried (`TRIES`).
+- Live version: TickerLake's style job publishes `style/gaps` (`style.style_gaps`: members with positive book split at the
+  30th / 70th book / price percentile by count, cap-weighted 4-quarter log asset growth clipped 2.5/97.5%, aggregate
+  B/P and ROE). It runs ~12 months ahead of French's (French fixes each July from the prior fiscal year): corr 0.17 same
+  month, 0.48 with French 12 months later (growth side 0.69, value side 0.19, different universe), so the page shows it
+  as an "early estimate" calibrated on French a year later (`LIVE_LEAD_MONTHS`), never as the signal.
 
 ## Look-alikes (modules/analogs)
 - Job "analogs" runs after "market" (reads `market/long_history` and `credit/spreads`, no
@@ -232,6 +326,42 @@ Publishers are thin: they call the project's own validated functions, never re-i
   (Starter: annual, US); Starter has historical analyst grades for US stocks, which Yahoo also
   serves free (TickerLake `analyst_ratings`), so there is nothing to backtest before buying.
 - Test whether gauges built on NYSE breadth track SimpleVisor better than S&P member breadth.
+- Stock scores, research only (2026-11-13, scratch scripts `style/scores_*.py`, not a job): Piotroski F (9
+  signals), Mohanram G (8, medians across all members), gross profit/assets, net share issuance, asset
+  growth, 12-1 momentum, 1-yr volatility, a 7-check trend list (above 50/200-day, 50 > 200, RSI 40-70,
+  volume ratio > 1, 1m and 3m up) and an equal-weight composite of the five literature ones; S&P members at
+  167 month-ends 2012-12..2026-10, same point-in-time rules as style. Rank IC with next-month return, all
+  |t| < 2: F -0.005, G +0.001, trend -0.013, gross prof +0.007, buybacks +0.019 (t 1.9; 3m +0.037, t 2.0,
+  both halves positive: the only one in line with its paper, and one of nine), asset growth -0.006,
+  momentum -0.004, low vol -0.027 (t -1.5, wrong sign), composite -0.009. F among the cheapest third
+  (where Piotroski applied it): high minus low -0.76%/month (t -1.1). A first pass showed low-G stocks
+  trailing 1%/month (t -10): that was the blank-sector look-ahead above, gone once fixed.
+- Pairs trading, research only (2026-11-13, scratch `pairs/pairs_test.py`, not a job): each month-end, Engle-Granger
+  on the trailing 252 sessions (log prices, ADF 1 lag, 5% = t < -3.34, 1% = t < -3.90); trade |z| > 2, hold 20
+  sessions or until z crosses 0 (max 60); returns per gross dollar; costs 2 bp/side ETFs, 5 bp stocks. ETFs: 96
+  sector/style/global/bond/commodity ETFs, 2001-2026, ~3,650 pairs/month: 8.3% pass at 5% (chance 5%), and passing
+  one year barely raises the next year's pass rate (12.8% vs 9.7%). Stretched 5% pairs -0.2 bp per 20 days gross
+  (t 0.4); 1% pairs +26 bp (t 1.7; since 2014 t 0.5; 37 of 945 trades IVV/SPY); stretched non-cointegrated pairs
+  kept diverging (-17 bp, t -1.9). S&P 500 stocks within GICS sub-industry, 2011-2026, ~1,300 pairs/month (today's
+  members only, which flatters reversion): 7.1% pass, persistence 8.6% vs 7.9%, 5% pairs -10 bp (t -0.6), 1% pairs
+  -32 bp (t -1.0); exit-at-mean variants t < 0.7; negative after costs. Full grid (`pairs/pairs_grid.py`, Gatev-style
+  monthly cohorts, committed capital, net of costs): methods EG 5% / 1%, distance (20 smallest SSD), Kalman beta (EG 5%
+  selection) x formation 63/126/252 x entry 1-3 sd x execution at the signal close / next open / next close x trading
+  period 21/63 sessions = 360 variants each. Stocks: 0 with t > 2, 60 with t < -2, 24% positive. ETFs: 41 with t > 2,
+  45 with t < -2; every strong one is Kalman entering at the signal close (k = 1, t up to 4.5), which is mostly
+  closing-print noise: per trade 52 bp net at the signal close, 20 bp at the next open, 8 bp at the next close (F 126,
+  T 63). Best implementable variant chosen on 2001-13 (Kalman F 126, k 1, next open, T 63): 2014-26 t 1.4, ~3 bp/month
+  on committed capital, spread over 2,600 pairs (largest in foreign-country and commodity ETFs, i.e. time-zone
+  staleness); at 10 bp/side ~0. Intraday timing untestable (1-minute bars only since 2026-08-27). No page built.
+- Growth/value timing, research only (2026-11-14, scratch `rot/improve.py`, not a job): Ken French large growth vs
+  large value (BIG LoBM / BIG HiBM, daily 1926-2026-09), signal at the close, trade next close, 10 bp per switch, vs a
+  50/50 blend and vs a constant mix with the same average growth share. Contrarian on the 50-day deviation of log G/V
+  -0.65%/yr (t -0.9), timing ~0; trend did better before 2000 (ratio > 200-day avg +1.5, t 2.1; Kalman slope +1.8, t 2.5;
+  variance-ratio switch +1.4, t 1.8) but ~0 since 2000 and on VUG/VTV, MGK/VTV. Walk-forward ML (logistic, boosted trees,
+  random forest; price, rates, credit, inflation, + macro panel), retrained each January: rank IC 0.00-0.05, accuracy ~50%,
+  best +1.1%/yr t 1.3; the macro panel made it worse. Credit spread widening 6m -> growth +1.2 (t 1.5). Nothing tradable.
+  Fundamentals (`rot/improve_vs*.py`): the investment gap is the one signal that held up; built as the Growth vs
+  Value page (see its section below).
 - Possible additions: put/call ratio component, 52-week high/low
   history panel, sector/factor relative-strength analysis page, alerts when a gauge
   crosses a band.

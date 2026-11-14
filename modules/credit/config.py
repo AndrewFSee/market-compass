@@ -33,3 +33,4 @@ STRESS_COLORS = ["teal", "amber", "red"]
 WIDENING_BP = 10
 
 HISTORY_SPANS = {"1Y": 1, "3Y": 3, "10Y": 10, "All": None}
+GAP_CHANGE_DAYS = 28  # rating-gap matrix: change over 4 weeks
