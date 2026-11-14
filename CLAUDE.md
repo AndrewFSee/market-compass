@@ -319,6 +319,23 @@ Publishers are thin: they call the project's own validated functions, never re-i
   momentum -0.004, low vol -0.027 (t -1.5, wrong sign), composite -0.009. F among the cheapest third
   (where Piotroski applied it): high minus low -0.76%/month (t -1.1). A first pass showed low-G stocks
   trailing 1%/month (t -10): that was the blank-sector look-ahead above, gone once fixed.
+- Pairs trading, research only (2026-11-13, scratch `pairs/pairs_test.py`, not a job): each month-end, Engle-Granger
+  on the trailing 252 sessions (log prices, ADF 1 lag, 5% = t < -3.34, 1% = t < -3.90); trade |z| > 2, hold 20
+  sessions or until z crosses 0 (max 60); returns per gross dollar; costs 2 bp/side ETFs, 5 bp stocks. ETFs: 96
+  sector/style/global/bond/commodity ETFs, 2001-2026, ~3,650 pairs/month: 8.3% pass at 5% (chance 5%), and passing
+  one year barely raises the next year's pass rate (12.8% vs 9.7%). Stretched 5% pairs -0.2 bp per 20 days gross
+  (t 0.4); 1% pairs +26 bp (t 1.7; since 2014 t 0.5; 37 of 945 trades IVV/SPY); stretched non-cointegrated pairs
+  kept diverging (-17 bp, t -1.9). S&P 500 stocks within GICS sub-industry, 2011-2026, ~1,300 pairs/month (today's
+  members only, which flatters reversion): 7.1% pass, persistence 8.6% vs 7.9%, 5% pairs -10 bp (t -0.6), 1% pairs
+  -32 bp (t -1.0); exit-at-mean variants t < 0.7; negative after costs. Full grid (`pairs/pairs_grid.py`, Gatev-style
+  monthly cohorts, committed capital, net of costs): methods EG 5% / 1%, distance (20 smallest SSD), Kalman beta (EG 5%
+  selection) x formation 63/126/252 x entry 1-3 sd x execution at the signal close / next open / next close x trading
+  period 21/63 sessions = 360 variants each. Stocks: 0 with t > 2, 60 with t < -2, 24% positive. ETFs: 41 with t > 2,
+  45 with t < -2; every strong one is Kalman entering at the signal close (k = 1, t up to 4.5), which is mostly
+  closing-print noise: per trade 52 bp net at the signal close, 20 bp at the next open, 8 bp at the next close (F 126,
+  T 63). Best implementable variant chosen on 2001-13 (Kalman F 126, k 1, next open, T 63): 2014-26 t 1.4, ~3 bp/month
+  on committed capital, spread over 2,600 pairs (largest in foreign-country and commodity ETFs, i.e. time-zone
+  staleness); at 10 bp/side ~0. Intraday timing untestable (1-minute bars only since 2026-08-27). No page built.
 - Possible additions: put/call ratio component, 52-week high/low
   history panel, sector/factor relative-strength analysis page, alerts when a gauge
   crosses a band.

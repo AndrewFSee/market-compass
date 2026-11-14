@@ -115,7 +115,7 @@ def _fake_credit(tmp_path, monkeypatch):
     p_stress = np.linspace(0, 1, len(idx))
     store.save_frame("credit", "stress", pd.DataFrame({"regime_prob_0": (1 - p_stress) / 2, "regime_prob_1": (1 - p_stress) / 2,
                                                        "regime_prob_2": p_stress, "stress_prob": p_stress}, index=idx))
-    store.save_frame("credit", "tiers", pd.DataFrame({"B": walk, "CCC": walk * 3}, index=idx))
+    store.save_frame("credit", "tiers", pd.DataFrame({"BB": walk * 0.6, "B": walk, "CCC": walk * 3}, index=idx))
     store.save_frame("credit", "forecast", pd.DataFrame({"forecast_bps": np.linspace(-2, 2, 60)}, index=idx[-60:]))
     card = {"bps": 300.0, "change_20d": 5.0, "percentile": 0.4, "since": "2023-01-02", "as_of": "2026-01-01"}
     tier = {"tier": "B", "spread": 300.0, "change": 12.0, "average": 290.0, "low": 250.0, "high": 400.0,
@@ -139,6 +139,18 @@ def test_credit_page_renders(tmp_path, monkeypatch):
     page = AppTest.from_file(str(ROOT / "modules" / "credit" / "page.py"), default_timeout=60).run()
     assert not page.exception, page.exception
     assert any(m.value == "60%" for m in page.metric)  # P(stress)
+
+
+def test_tier_gaps():
+    from modules.credit.calc import tier_gaps
+    idx = pd.bdate_range("2026-01-01", periods=40)
+    t = pd.DataFrame({"AAA": 40.0, "B": 300.0, "CCC": 1000.0}, index=idx)
+    t.loc[idx[-1], ["B", "CCC"]] = [310.0, 1050.0]
+    gap, change, base = tier_gaps(t, days=28)
+    assert base == idx[idx <= idx[-1] - pd.Timedelta(days=28)].max()
+    assert gap.loc["CCC", "B"] == 740 and change.loc["CCC", "B"] == 40
+    assert gap.loc["B", "AAA"] == 270 and change.loc["B", "AAA"] == 10
+    assert pd.isna(gap.loc["AAA", "B"]) and pd.isna(change.loc["B", "B"])  # lower triangle only
 
 
 def test_credit_page_without_data(tmp_path, monkeypatch):
