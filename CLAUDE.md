@@ -362,6 +362,40 @@ Publishers are thin: they call the project's own validated functions, never re-i
   best +1.1%/yr t 1.3; the macro panel made it worse. Credit spread widening 6m -> growth +1.2 (t 1.5). Nothing tradable.
   Fundamentals (`rot/improve_vs*.py`): the investment gap is the one signal that held up; built as the Growth vs
   Value page (see its section below).
+- Market regimes, research only (2026-11-15, scratch `regime/regime_test.py`, `risk_test.py`, `regime_rules.py`,
+  `daily_map.py`; not a job, no page): US market (French daily Mkt-RF + RF since 1926), daily / weekly / monthly, walk-forward
+  from 1950 (expanding window, refit yearly, every 2 years daily), causal inference only (HMM forward-filtered probabilities,
+  jump-model forward DP, Kalman filter not smoother). Gaussian HMM K 2-4 on returns, returns + log vol, and Kalman-filtered
+  drift (local level, gain falls with vol) + log vol; GMM; statistical jump model (EWMA return / downside dev / Sortino at 3
+  halflives, 3 jump penalties); rules: SMA (200d / 40w / 10m), Kalman drift sign and its z = m/sqrt(P) up/sideways/down,
+  vol vs expanding median, trend x vol maps. State -> exposure from training (next-period mean > 0, or mean/var scaled),
+  long/flat, 5 bp. Everything looks good before 1988 and fails after: market autocorrelation flipped (daily +0.20 in 1950-87,
+  -0.06 since 1988; weekly +0.09 / -0.08), so short trend / regime rules caught stale-price momentum in the old index. Daily
+  Kalman drift sign Sharpe 1.40 then 0.24 (B&H 0.56 / 0.54); daily jump model K3 0.91 then 0.32; weekly Kalman drift 0.97
+  then 0.29; since 1988 no regime model beats buy-and-hold or vol targeting (0.58-0.60), timing alpha vs a same-exposure mix
+  t < 1 everywhere, mostly negative. Only the 10-month SMA held up (Sharpe 0.62 / 0.63, max drawdown -32% vs -55%), and
+  that is lower exposure, not timing (alpha t 0.03 since 1988). As risk descriptions (normal forecast of the next period
+  from the state's past mean / sd, log score): no regime set beats a plain EWMA vol estimate; vs it, monthly SMA x vol +2.3
+  (t 2.2) since 1988 but -4.2 (t -2.5) before, HMMs / jump models -0.4..-10 (several t < -2); daily trend x vol on the next
+  21 days -0.4 (t -0.4). Weekly data and Kalman pre-filtering did not change any of this.
+  Non-price inputs, same day (scratch `regime/macro_regimes.py`, `risk_managed.py`; monthly, OOS 1965-, halves 1965-94 /
+  1995-): Baa-Aaa and Baa-10Y (level, z, 6m change), 10Y-3M curve, CPI y/y (lag 1) and its 12m change, the macro
+  nowcaster's walk-forward panel (lag 2: recession prob, Sahm, factors), and since 1997 HY OAS, the credit project's
+  walk-forward stress HMM, VIX. Breadth not tested (5 years of S&P member breadth, NYSE since 2016). Direction: risk inputs
+  point the "wrong" way for risk-off rules, high spreads / recession odds / VIX were followed by higher 12-month returns
+  (recession prob IC +0.34 t 3.1 in 1965-94, +0.10 t 0.8 since; spreads +0.23 / +0.07-0.13; 6m credit widening +0.31 t 3.1,
+  then -0.16 t -1.7); inflation level -0.26 (t -2.0) since 1995. 14 risk-off rules: none beats buy-and-hold on timing in both
+  halves (curve inverted t 1.7 / 0.3, inflation up 1 pt t 0.8 / 1.2; HY widening 3m since 1998 Sharpe 0.57 vs 0.46, t 1.4 /
+  -0.9). HMM / GMM / jump model on macro vectors (with and without market trend / vol, and on the nowcaster factors), 56
+  variants: nothing holds in both halves (best "all" t 2.1). Beyond realized vol, next-month risk: VIX +5.3 x100 log score
+  (t 2.4, both halves positive), below 10-month average +1.1 (t 2.3), inflation level +1.0 (t 2.6); fitted regime states add
+  nothing. Vol-managed long/flat with sd from vol + VIX + trend + inflation: since 2003 Sharpe 0.71 vs 0.60 buy-and-hold, max
+  drawdown -33% vs -55%, alpha on the market +1.7%/yr (t 1.85); vol alone +0.8 (t 0.9); before 1995 vol management lost
+  (-0.4..-0.6%/yr). Against augury's own SPY forecasts (which already pull toward VIX; track since 2016, scratch
+  `regime/augury_check.py`), neither input helps: rescaling its std walk-forward from 2019 by below-200-day gives +0.09 (t 0.6)
+  at 5 days and -1.6 (t -1.4) at 21; inflation -2.6 (t -2.6) and -16.9 (t -2.0) (its 21-day bands were too wide when CPI y/y
+  > 3%, mean (y/std)^2 0.66). Below the 200-day its 1-5 day bands run slightly narrow ((y/std)^2 1.06-1.15, 90% band 85-86%),
+  not enough to fix out of sample. So no risk dial was added to the Risk Forecasts page.
 - Possible additions: put/call ratio component, 52-week high/low
   history panel, sector/factor relative-strength analysis page, alerts when a gauge
   crosses a band.
