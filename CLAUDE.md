@@ -148,8 +148,21 @@ Publishers are thin: they call the project's own validated functions, never re-i
 - **augury** (augury, added 2026-11-10) -> `data/augury/`: forecast (ticker x horizon 1/5/21: VaR/ES,
   90% price range, vol_ann, gjr_vol_ann, realised_vol_21d, iv), bands (21-day price quantiles), prices
   (last 260 closes), track (every walk-forward forecast since 2016 with outcome: y, var_1/var_5, hit_*,
-  cov_*, crps, pit; models "augury" and, for IV tickers, "gjr"), summary.json (groups, models, iv_views,
-  per-ticker scores incl. last-250-day Basel zone, errors). The publisher downloads from Yahoo, cuts
+  cov_*, crps, pit; models "augury" and, for IV tickers and single stocks, "gjr"), summary.json (groups, models,
+  iv_views, short_iv_views, earnings {next_release, next_session, multiplier, event_days}, per-ticker scores
+  incl. last-250-day Basel zone, errors). Since 2026-11-15 the 8 single stocks add earnings-day variance
+  (augury `EventForecaster`, release times from Yahoo `get_earnings_dates`: before 12:00 NY -> that session,
+  later -> next; the move's size is the EW mean of the stock's past earnings-day r^2, not a multiple of current
+  vol: earnings moves are ~4.5-5.7% whatever the vol level, so a multiple ran too narrow in calm markets and too
+  wide in volatile ones) and SPY's 1-day horizon uses VIX9D (`TermForecaster`, `SHORT_IV_VIEWS`); a ticker whose
+  model name changed gets its track rebuilt. Measured (augury example 33, walk-forward 2016-): stocks CRPS 1-day
+  -1.08%, 5-day -1.08%, 21-day -0.31%, every stock, both halves; on earnings sessions -15.3%, 1% VaR breaches
+  16.5% -> 2.3%, 90% band 37% -> 90%; SPY 1-day -0.23% (t -3.3, both halves). Upcoming dates from Yahoo can be
+  estimates until confirmed. Tested and left out: CPI / jobs / PPI / FOMC days as extra variance (index
+  ETFs ~0, bond / credit ETFs -0.3%, equities slightly worse: their VIX-type views already price the events);
+  SPY's own 30-day ATM IV instead of VIX (worse at every horizon); each ticker's own Tradier ATM IV (vol-surface
+  project, only Feb-Nov 2026 for 9 tickers, Oct for the rest: pooled 1-day -0.36% t -2.6, MSFT / TSLA -0.7..-3%;
+  retest after ~a year of history). Scratch: `events/event_wf.py`, `options_wf.py`. The publisher downloads from Yahoo, cuts
   partial bars (`augury.monitoring.last_final_session`, 4:15 PM New York) and extends the stored track
   record, recomputing only ~40 trailing origins on the original refit schedule (first run ~7 min for
   28 tickers, then ~25 s; `--rebuild` starts over, `--only SPY,QQQ` merges). The page (Risk Forecasts)

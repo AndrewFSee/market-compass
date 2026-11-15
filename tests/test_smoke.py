@@ -296,7 +296,10 @@ def _fake_augury(tmp_path, monkeypatch):
     store.save_json("augury", "summary", {
         "as_of": as_of.isoformat(), "published": "2026-03-02T18:20:00", "demo": False, "augury_version": "0.2.0",
         "groups": {"Index ETFs": ["SPY"], "Single stocks": ["AAPL"]},
-        "models": {"SPY": "gjr-skewt+iv0.5", "AAPL": "gjr-skewt"}, "iv_views": {"SPY": "^VIX"},
+        "models": {"SPY": "gjr+iv0.5+short1d", "AAPL": "gjr-skewt+earnings"}, "iv_views": {"SPY": "^VIX"},
+        "short_iv_views": {"SPY": "^VIX9D"},
+        "earnings": {"AAPL": {"next_release": "2026-03-05T16:00:00-05:00", "next_session": "2026-03-06",
+                              "multiplier": 6.0, "move_sd": 0.045, "event_days": [4]}},
         "track_start": "2016-01-01", "errors": {"XYZ": "ValueError: not enough price history"},
         "scores": {"SPY": {"n": 300, "since": "2025-01-02", "through": "2026-03-02",
                            "var": {"0.01": var, "0.05": {**var, "rate": 0.05}},
@@ -315,6 +318,7 @@ def test_augury_page_renders(tmp_path, monkeypatch):
     page.selectbox(key="aug_ticker").select("AAPL").run()  # no track record yet
     assert not page.exception, page.exception
     assert page.info
+    assert any("Reports Mar 05 after the close" in c.value for c in page.caption)  # earnings inside the window
 
 
 def test_augury_page_without_data(tmp_path, monkeypatch):

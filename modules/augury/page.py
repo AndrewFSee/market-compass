@@ -40,6 +40,16 @@ if not summary or fc is None or fc.empty:
 as_of = pd.Timestamp(summary["as_of"])
 scores = summary.get("scores", {})
 views = summary.get("iv_views", {})
+short_views = summary.get("short_iv_views", {})
+earnings = summary.get("earnings", {})
+
+
+def next_earnings(t: str) -> str:
+    """'Nov 18 (3d)' when the ticker's next earnings session is inside the 21-day window, else '—'."""
+    e = earnings.get(t) or {}
+    if not e.get("event_days") or not e.get("next_session"):
+        return "—"
+    return f"{pd.Timestamp(e['next_session']):%b %d} ({e['event_days'][0]}d)"
 st.caption(f"Forecasts from the close of {as_of:%b %d, %Y} · {fc['ticker'].nunique()} tickers · "
            f"from augury {summary.get('augury_version', '')} · "
            f"[open the full augury dashboard]({apps.launch_url(cfg.FULL_APP_URL)}) (starts it if needed)")
@@ -78,7 +88,9 @@ with st.container(border=True):
             "VaR breaches (250d)": (f"{var1['recent_breaches']} / {var1['recent_expected']:.1f}"
                                     if var1 else "—"),
             "Zone": var1.get("recent_zone", "—"),
-            "View": views[t].lstrip("^") if t in views else "—",
+            "View": (views[t].lstrip("^") + (f" ({short_views[t].lstrip('^')} 1d)" if t in short_views else "")
+                     if t in views else "—"),
+            "Earnings": next_earnings(t) if t in earnings else "",
         })
     num = lambda label, fmt="%.1f", **kw: st.column_config.NumberColumn(label, format=fmt, **kw)  # noqa: E731
     ui.table(pd.DataFrame(rows), hide_index=True, height=min(38 * (len(rows) + 1), 560), column_config={
@@ -94,7 +106,12 @@ with st.container(border=True):
                                         "made the night before, against the 2.5 a calibrated model would average"),
         "Zone": st.column_config.TextColumn("Basel zone", help="Green: 0-4 breaches in 250 days; yellow 5-9; red 10+"),
         "View": st.column_config.TextColumn("IV view", help="Implied-vol index blended 50/50 into the 21-day "
-                                                            "variance (— = GJR alone)"),
+                                                            "variance (— = GJR alone); SPY's 1-day horizon uses "
+                                                            "the 9-day VIX"),
+        "Earnings": st.column_config.TextColumn(
+            "Earnings", help="Session that carries the next earnings move, and how many sessions ahead, when it "
+                             "falls inside the 21-day window. Single stocks' forecasts add that day's extra "
+                             "variance, estimated from the stock's past releases"),
     })
     st.caption("Moves are simple returns from the last close. No drift view: the median is close to today's price, "
                "so read the ranges as how far it could go, not where it is going.")
@@ -145,6 +162,19 @@ with right, st.container(border=True):
             f"last 21 days {r21['realised_vol_21d']:.1%})")
     if tkr in views and pd.notna(r21.get("iv")):
         note += f"; {views[tkr].lstrip('^')} at {r21['iv'] * 100:.1f} pulls it halfway to the implied level"
+    if tkr in short_views:
+        note += f"; the 1-day horizon uses {short_views[tkr].lstrip('^')} instead"
+    e = earnings.get(tkr) or {}
+    size = (f"a typical move of ±{e['move_sd']:.1%}" if e.get("move_sd")
+            else f"{e.get('multiplier', 1):.1f}x a normal day's variance")
+    if e.get("event_days") and e.get("next_session"):
+        rel = pd.Timestamp(e["next_release"])
+        when = "before the open" if rel.hour < 12 else "after the close"
+        note += (f". Reports {rel:%b %d} {when}: the {pd.Timestamp(e['next_session']):%b %d} session is forecast "
+                 f"with {size} (one standard deviation, from its past earnings days)")
+    elif e:
+        note += (f". Earnings days are forecast with {size}; none in the next 21 sessions"
+                 + (f" (next release {pd.Timestamp(e['next_release']):%b %d})" if e.get("next_release") else ""))
     st.caption(note + ".")
 
 # ================================================================= track record
@@ -181,7 +211,8 @@ else:
         if skill:
             st.metric("Skill vs plain GJR, 1 day", f"{skill.get('1', np.nan):+.2%}",
                       f"21 days {skill.get('21', np.nan):+.2%}", delta_color="off", delta_arrow="off")
-            st.caption("CRPS improvement from the implied-vol view (> 0 = better)")
+            what = "adding earnings days" if tkr in earnings else "the implied-vol view"
+            st.caption(f"CRPS improvement from {what} (> 0 = better)")
         else:
             st.metric("Forecasts scored", f"{sc['n']:,}", 0, delta_description="plain GJR, no view")
             st.caption(f"Daily since {pd.Timestamp(sc['since']):%b %Y}")
