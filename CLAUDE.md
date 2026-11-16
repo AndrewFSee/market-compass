@@ -409,6 +409,22 @@ Publishers are thin: they call the project's own validated functions, never re-i
   at 5 days and -1.6 (t -1.4) at 21; inflation -2.6 (t -2.6) and -16.9 (t -2.0) (its 21-day bands were too wide when CPI y/y
   > 3%, mean (y/std)^2 0.66). Below the 200-day its 1-5 day bands run slightly narrow ((y/std)^2 1.06-1.15, 90% band 85-86%),
   not enough to fix out of sample. So no risk dial was added to the Risk Forecasts page.
+- Gauges in combination, research only (2026-11-15, scratch `combo/fetch_data.py`, `combo_test.py`, `combo_more.py`;
+  not a job): weekly S&P 500 1991-2026-09 with long-history gauges: hub `technical` and `fear_greed` recipes on long
+  inputs (VIX, Baa-10Y as the junk component, a 10Y return proxy, breadth from Ken French's 49 industries), -NFCI as
+  liquidity, Baa-10Y level / 13-week change, % above 200-day, VIX, VIX - realized, 21-day realized vol, industries above
+  200-day, nowcaster recession probability (2-month lag), 10Y-3M, CPI y/y. AAII refuses automated downloads (403); CBOE's
+  put/call CSV ends 2019-10, so neither was used. Targets: next 4 / 13-week return, a 5% drawdown within 21 sessions.
+  Pre-stated combinations (halves 1992-2008 / 2009-2026): oversold with credit NOT widening did not beat oversold with
+  credit widening (2009+: +1.00% vs +2.22% next 4 weeks); fear + oversold beat oversold alone only in 2009+ (13 weeks
+  +5.9% vs +3.0%, t 2.3; 1992-2008 +1.7 vs +2.1); risk-off (below 200-day, VIX above its 1-yr median, credit widening)
+  raised 5% drawdown odds to 40% / 31% vs 13% in both halves, but below-200-day alone gives 32% / 29%; overbought + greed
+  with narrow breadth occurred 2 weeks in 35 years (untestable). Walk-forward from 2000 (refit each January, expanding):
+  all gauges in a ridge model, rank IC with next 4 weeks -0.04 (2000-12) / +0.14 (2013-26, t 2.2), next 13 weeks -0.14 /
+  +0.21; boosted trees worse; single gauges mostly negative out of sample (relations learned in the 1990s reversed:
+  trend -0.22, t -4.8). Drawdown odds: VIX + realized vol AUC 0.627 / 0.621; all gauges 0.448 / 0.624; vol + any one
+  gauge at most +0.02 (technical, breadth, fear/greed); a rolling 10-year window was worse everywhere. So no combination
+  adds reliably beyond volatility for risk, and no direction model holds in both halves.
 - Possible additions: put/call ratio component, 52-week high/low
   history panel, sector/factor relative-strength analysis page, alerts when a gauge
   crosses a band.
