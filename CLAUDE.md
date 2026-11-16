@@ -425,6 +425,38 @@ Publishers are thin: they call the project's own validated functions, never re-i
   trend -0.22, t -4.8). Drawdown odds: VIX + realized vol AUC 0.627 / 0.621; all gauges 0.448 / 0.624; vol + any one
   gauge at most +0.02 (technical, breadth, fear/greed); a rolling 10-year window was worse everywhere. So no combination
   adds reliably beyond volatility for risk, and no direction model holds in both halves.
+- Sector / industry / factor rotation, research only (2026-11-16, scratch `rotf/rotation_signals.py`, `etf_check.py`,
+  `why.py`; not a job). Ken French 49 industries (monthly since 1926), signals fixed up front, monthly rank IC with next month
+  (NW t): 12-1 momentum +0.079 (t 7.0) 1930-63, +0.079 (4.7) 1964-94, +0.040 (3.0) 1995-2026, +0.037 (2.3) 2010-26; residual
+  momentum (net of beta x market) similar (+0.043 / +0.037); 52-week-high fades (+0.021 t 1.2 since 2010); 1-month reversal,
+  industry B/M and low vol ~0 since 1995. But since 2000 it is borderline: 49 industries IC +0.029 (t 2.1), top-minus-bottom
+  quarter +3.8%/yr (t 1.3); 12 industries +0.040 (t 1.9); the 20 largest of the 49 +0.015 (t 0.8), so what remains sits in
+  smaller industries. On tradable ETFs (top k equal-weight, 10 bp/turnover): 11 sector SPDRs 2000-26 IC +0.006, top 3 vs
+  equal weight +0.07%/yr (t 0.0); 24 industry ETFs 2008-26 IC +0.013, top 5 +1.9%/yr (t 0.7; -1.0 then +4.6 by half);
+  residual momentum no better. Factors (Mkt, SMB, HML, RMW, CMA, Mom, ST/LT reversal, 1963-): time-series factor momentum
+  (hold a factor only after a positive 12 months) alpha over always-on +0.9 (t 2.1) / +0.8 (1.6) / +0.7 (1.3) for 1964-94 /
+  1995-2026 / 2010-26; cross-sectional (top half) +1.0 / +1.3 / +1.7 (t 1.2-2.0); valuation-spread timing (Haddad-Kozak-
+  Santosh, B/M of long minus short leg, price-updated) +1.4 / +0.2 / +1.2 (t < 1.7); vol-managed factors ~0 or worse except
+  Mom. These are paper long-short factors; on long-only factor ETFs (MTUM, VLUE, QUAL, USMV, SIZE, IWF, IWD, IWM, 2014-26)
+  12-1 ranking IC -0.015, top 3 vs equal weight -0.2%/yr. Net: nothing tradable beyond the growth/value investment gap.
+  Follow-ups the same day (scratch `rotf/ratings_sector.py`, `size_gaps.py`, `macro_rotation.py`). Broker rating and
+  price-target changes by sector (TickerLake `analyst_ratings`, current members' GICS sectors, 10 sector SPDRs, 2012-26):
+  net upgrades and net target raises over 1 / 3 months, raw and net of the sector's past 3-month return, rank IC with next
+  month -0.02..+0.02 (|t| < 1), top 3 vs equal weight -0.3..-2.2%/yr. Small vs large with the growth/value machinery
+  (French 2x3, small = mean of the three small portfolios): investment gap (small - big) one reading per July t 2.6
+  (-1999 t 2.3, 2000- t 1.5, rank corr +0.28), but the monthly rule earns +0.7%/yr over 50/50 (t 1.1; 2000- +0.2);
+  profitability gap and value spread nothing since 2000. Macro-conditional rules on French 12 industries (excess over
+  the market) and factors, 1977-99 / 2000-26: curve steepening with falling real yields -> financials, industrials, HML;
+  flattening -> defensives, RMW; credit widening -> SMB, cyclicals minus defensives: all |t| <= 1.4 and most signs flip
+  between halves. Growth x inflation quadrants (nowcaster real-activity factor lagged 2 months, CPI y/y trend), ranking
+  industries by their mean in the current quadrant over earlier months only: IC +0.03 in both halves (t 1.5 / 1.6), top 3
+  vs equal weight +1.0%/yr (t 1.0) before costs; factors held when their conditional mean is positive -0.35%/yr (t -2.1).
+  Per-industry HMMs (scratch `rotf/hmm_sectors.py`; Gaussian HMM K 2/3 on each industry's return over the equal-weight
+  group, alone or with log 6-month vol, refit each January on earlier months, forward-filtered probabilities; forecast =
+  (p_t A) . state means): French 12 industries K2 rank IC -0.017 (t -1.0) 1965-94, +0.026 (1.5) 1995-2026, +0.034 (1.4)
+  2010-26; 49 industries -0.024 (-2.2) / +0.016 (1.9) / +0.013 (1.3); every variant flips sign between 1965-94 and later,
+  and none beats plain 12-1 momentum on the same months (+0.049 / +0.053 / +0.034 on 12; +0.076 / +0.040 / +0.037 on 49).
+  The states mostly separate calm from volatile spells; their mean returns are small and noisy.
 - Possible additions: put/call ratio component, 52-week high/low
   history panel, sector/factor relative-strength analysis page, alerts when a gauge
   crosses a band.
