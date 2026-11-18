@@ -15,6 +15,16 @@ EVENT_LABEL = {"earnings": "earnings", "guidance": "guidance", "m&a": "M&A", "le
                "product": "product", "analyst_action": "analyst action", "macro": "macro", "other": "other"}
 RELEVANT = ["primary", "secondary"]          # the research samples use relevance >= secondary
 
+FADES_HELP = ("Estimate, earnings / guidance 8-Ks and earnings calls only: the close two trading days after the "
+              "first 15:50 decision at which the reading was usable. Before the holdout, the small drift linked "
+              "to earnings-release sentiment showed up within about two sessions and was mostly gone after "
+              "two to five. Unconfirmed until the H1 holdout test; no effect was found for other documents.")
+MATERIALITY_HELP = ("The model's judgment of how much the document matters to the company's valuation (low / "
+                    "medium / high). It says nothing about direction, but it does track how much the stock moved "
+                    "(test 13, 2019 to mid-2026, market-adjusted move from the previous close through the first "
+                    "close after the filing): earnings releases low / medium / high moved 1.7% / 2.2% / 4.2% on "
+                    "average, other 8-Ks 1.4% / 1.8% / 3.1%. That move mostly happens before the reading is "
+                    "usable, so it is a size-of-news label, not a trade signal.")
 STALE_POLL_MINUTES = 15                     # last successful poll older than this (vs publish time) = warning
 TOP_N = 15                                  # rows in each side of the earnings board
 TONE_RANGES = {"1Y": 365, "3Y": 3 * 365, "All": None}

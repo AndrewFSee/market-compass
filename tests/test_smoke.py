@@ -1210,6 +1210,7 @@ def _fake_sentiq(tmp_path, monkeypatch):
             "company": ["Alpha", "Beta", "Gamma"][k % 3], "group": ["S&P 500", "S&P 400", "S&P 600"][k % 3],
             "sector": "Industrials", "items": "2.02,9.01", "title": "8-K", "url": "https://www.sec.gov/x",
             "published_at": t, "first_seen_at": t, "tradable_at": t, "ingest_mode": "live", "scored_at": t,
+            "fades_by": t + pd.Timedelta(days=2) if k % 4 < 2 else pd.NaT,
             "date": t.tz_convert("America/New_York").normalize().tz_localize(None),
             "relevance": "primary", "event_type": ["earnings", "guidance", "other", "m&a"][k % 4],
             "sentiment": (k % 9 - 4) / 5, "confidence": 0.8, "materiality": "high",
@@ -1219,6 +1220,10 @@ def _fake_sentiq(tmp_path, monkeypatch):
     d = f.groupby(["date", "group", "doc", "event_type"]).agg(n=("item_id", "size"),
                                                              mean_sentiment=("sentiment", "mean")).reset_index()
     store.save_frame("sentiq", "daily", d)
+    months = pd.date_range(end=now.tz_localize(None).normalize(), periods=6, freq="MS")
+    store.save_frame("sentiq", "tone_monthly", pd.DataFrame({
+        "month": months.date, "yoy": [0.1, -0.05, None, 0.02, 0.0, -0.01], "n_pairs": [50, 40, 3, 60, 55, 12],
+        "raw": 0.4, "n": 60}))
     store.save_json("sentiq", "health", {
         "as_of": now.isoformat(), "problems": [], "cycles_24h": 3, "cycles_failed_24h": 0,
         "cycle_minutes_median": 0.6, "cycle_minutes_max": 12.0, "items_written_24h": 5,

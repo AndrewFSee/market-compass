@@ -27,8 +27,11 @@ def _filings(stamp) -> pd.DataFrame | None:
     df = store.load_frame(MODULE, "filings")
     if df is None:
         return None
-    for c in ("tradable_at", "published_at", "first_seen_at", "scored_at"):
-        df[c] = pd.to_datetime(df[c], utc=True).dt.tz_convert(cfg.ET)
+    for c in ("tradable_at", "published_at", "first_seen_at", "scored_at", "fades_by"):
+        if c in df:
+            df[c] = pd.to_datetime(df[c], utc=True).dt.tz_convert(cfg.ET)
+    if "fades_by" not in df:
+        df["fades_by"] = pd.NaT
     df["date"] = pd.to_datetime(df["date"])
     df["type"] = df["event_type"].map(cfg.EVENT_LABEL).fillna(df["event_type"])
     return df
@@ -43,11 +46,14 @@ def ago(ts, now: pd.Timestamp) -> str:
 
 def filing_table(v: pd.DataFrame, key: str) -> None:
     ui.table(pd.DataFrame({
-        "Usable from (ET)": v["tradable_at"].dt.strftime("%Y-%m-%d %H:%M"), "Ticker": v["ticker"],
+        "Usable from (ET)": v["tradable_at"].dt.strftime("%Y-%m-%d %H:%M"),
+        "Effect fades by (est.)": v["fades_by"].dt.strftime("%a %b %d").fillna("—"), "Ticker": v["ticker"],
         "Company": v["company"], "Doc": v["doc"], "Type": v["type"], "Sentiment": v["sentiment"],
         "Materiality": v["materiality"], "Surprise": v["surprise"], "Model's reading": v["rationale"],
         "Filing": v["url"]}),
         hide_index=True, key=key, column_config={
+            "Effect fades by (est.)": st.column_config.TextColumn(help=cfg.FADES_HELP),
+            "Materiality": st.column_config.TextColumn(help=cfg.MATERIALITY_HELP),
             "Sentiment": st.column_config.ProgressColumn(min_value=-1, max_value=1, format="%+.2f",
                                                          help="-1 very negative ... +1 very positive"),
             "Surprise": st.column_config.NumberColumn(format="%+.2f", help="Only when the text compares results "
@@ -184,8 +190,27 @@ if daily is not None and not daily.empty:
                       legend={"orientation": "h", "y": 1.12, "x": 0})
     ui.chart(fig, key="sq_tone")
     st.caption("Weekly mean model sentiment of earnings 8-Ks (relevance primary / secondary), weeks ending Friday. "
-               "Earnings seasons show as the tall bars; weeks with few releases are noisy. S&P 400 / 600 and the "
-               "Nasdaq extras are collected only from 2026 on.")
+               "Earnings seasons show as the tall bars. Weeks with few releases read lower mostly because of who "
+               "reports then (off-calendar fiscal years, pre-announcements), not because news got worse, so compare "
+               "seasons with the chart below. S&P 400 / 600 and the Nasdaq extras are collected only from 2026 on.")
+
+    tm = load("tone_monthly")
+    if tm is not None and not tm.empty and tm["yoy"].notna().any():
+        tm = tm.assign(month=pd.to_datetime(tm["month"])).dropna(subset=["yoy"])
+        if cfg.TONE_RANGES[rng]:
+            tm = tm[tm["month"] >= as_of.tz_localize(None) - pd.Timedelta(days=cfg.TONE_RANGES[rng])]
+        st.markdown("**S&P 500: change vs the same companies' releases a year earlier**")
+        fig = go.Figure(go.Bar(
+            x=tm["month"], y=tm["yoy"], customdata=tm[["n_pairs"]],
+            marker_color=[cfg.COLORS["pos"] if y >= 0 else cfg.COLORS["neg"] for y in tm["yoy"]],
+            hovertemplate="%{x|%b %Y}: %{y:+.2f} (%{customdata[0]} companies)<extra></extra>"))
+        fig.update_layout(height=260, margin={"l": 0, "r": 0, "t": 10, "b": 0},
+                          yaxis={"title": "change in sentiment", "zeroline": True})
+        ui.chart(fig, key="sq_tone_yoy")
+        st.caption("Each month: the average of (this release's sentiment − the same company's release about a year "
+                   "earlier), months with at least 10 such pairs; the current month is partial. This removes the "
+                   "seasonal mix of who reports. Whether it predicts the market was tested before the holdout "
+                   "(test 12): it did not (correlation with next month's S&P 500 return −0.06, p 0.55).")
 
 # ================================================================= company lookup
 st.subheader("Company lookup")
@@ -228,7 +253,7 @@ if research is not None:
                                           "primary": "Primary result (rank IC, p)", "verdict": "Verdict"}),
                  hide_index=True)
         st.caption("IC = rank correlation between the feature and the next h days' market-adjusted return; h1 / h2 "
-                   "= 1 / 2 trading days. 'Nominal pass' = p < 0.05 for the primary cell but no discovery after the "
+                   "= 1 / 2 trading days (tests 7, 12 and 13 use the target named in the question). 'Nominal pass' = p < 0.05 for the primary cell but no discovery after the "
                    "Benjamini-Hochberg correction across each run's ~180 cells. Details: SentIQ's CLAUDE.md "
                    "decisions log.")
 
