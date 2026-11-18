@@ -65,6 +65,7 @@ PAGES = {
         {"path": "modules/events/page.py", "title": "Events & Odds", "icon": ":material/event:"},
         {"path": "modules/style/page.py", "title": "Value & Growth", "icon": ":material/scatter_plot:"},
         {"path": "modules/buybacks/page.py", "title": "Buybacks", "icon": ":material/currency_exchange:"},
+        {"path": "modules/sentiq/page.py", "title": "Filings & Calls", "icon": ":material/article:"},
     ],
     "Research": [
         {"path": "modules/analogs/page.py", "title": "Look-alikes", "icon": ":material/history:"},
@@ -122,5 +123,8 @@ JOBS = {
     # then Claude classifies each new filing once (modules/buybacks/news.py; ~$0.01 a filing)
     "buyback_news": {"cmd": [venv_python(SENTIQ), "scripts/publish_buyback_candidates_to_hub.py"], "cwd": str(SENTIQ)},
     "buyback_news_classify": "modules.buybacks.news:run",
+    # scored 8-Ks / earnings calls, collector health, research status: read from SentIQ's store (no SEC or
+    # model calls; ~1.5 min). No returns are published (SentIQ's holdout stays unseen until its looks)
+    "sentiq": {"cmd": [venv_python(SENTIQ), "scripts/publish_news_to_hub.py"], "cwd": str(SENTIQ), "timeout": 1800},
     "analyst": "modules.analyst.job:run",  # last: reads everything the others published
 }

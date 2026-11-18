@@ -1194,3 +1194,62 @@ def test_growth_value_page_without_data(tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
     page = AppTest.from_file(str(ROOT / "modules" / "growth_value" / "page.py"), default_timeout=60).run()
     assert not page.exception and page.info
+
+
+def _fake_sentiq(tmp_path, monkeypatch):
+    """Synthetic SentIQ output in the shape scripts/publish_news_to_hub.py writes."""
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from core import store
+    now = pd.Timestamp.now(tz="UTC").floor("min")
+    rows = []
+    for k in range(40):
+        t = now - pd.Timedelta(hours=6 * k)
+        rows.append({
+            "item_id": f"i{k}", "source": "transcripts" if k % 7 == 0 else "edgar",
+            "doc": "Earnings call" if k % 7 == 0 else "8-K", "ticker": ["AAA", "BBB", "CCC"][k % 3], "cik": k % 3,
+            "company": ["Alpha", "Beta", "Gamma"][k % 3], "group": ["S&P 500", "S&P 400", "S&P 600"][k % 3],
+            "sector": "Industrials", "items": "2.02,9.01", "title": "8-K", "url": "https://www.sec.gov/x",
+            "published_at": t, "first_seen_at": t, "tradable_at": t, "ingest_mode": "live", "scored_at": t,
+            "date": t.tz_convert("America/New_York").normalize().tz_localize(None),
+            "relevance": "primary", "event_type": ["earnings", "guidance", "other", "m&a"][k % 4],
+            "sentiment": (k % 9 - 4) / 5, "confidence": 0.8, "materiality": "high",
+            "surprise": 0.3 if k % 5 == 0 else None, "novelty": "new", "rationale": "Beat and raised."})
+    f = pd.DataFrame(rows)
+    store.save_frame("sentiq", "filings", f)
+    d = f.groupby(["date", "group", "doc", "event_type"]).agg(n=("item_id", "size"),
+                                                             mean_sentiment=("sentiment", "mean")).reset_index()
+    store.save_frame("sentiq", "daily", d)
+    store.save_json("sentiq", "health", {
+        "as_of": now.isoformat(), "problems": [], "cycles_24h": 3, "cycles_failed_24h": 0,
+        "cycle_minutes_median": 0.6, "cycle_minutes_max": 12.0, "items_written_24h": 5,
+        "sources": {"edgar": {"last_poll_ok_at": now.isoformat(), "open_alerts": {}}},
+        "cycles": [{"started_at": now.isoformat(), "minutes": 0.6, "written": 1, "status": "ok"}],
+        "alerts_7d": [{"raised_at": now.isoformat(), "source": "edgar", "kind": "stalled", "message": "x"}],
+        "scoring_unresolved_7d": 2, "scoring_last_error_at": now.isoformat(),
+        "spend_month_usd": 1.5, "spend_30d_usd": 4.0})
+    store.save_frame("sentiq", "research", pd.DataFrame(
+        [("1", "2026-10-11", "q", "IC +0.03", "nominal pass")], columns=["test", "date", "question", "primary",
+                                                                         "verdict"]))
+    store.save_json("sentiq", "holdout", {"start": "2026-07-01", "model": "m", "hypotheses": [
+        {"id": "H1", "test": "t", "look": "on/after 2027-08-31", "rule": "p < 0.025", "planned_n": 2600,
+         "n_so_far": 944}]})
+    store.save_json("sentiq", "summary", {"as_of": now.isoformat(), "filings": len(f),
+                                          "latest": now.isoformat(), "model": "claude-haiku-5-5"})
+
+
+def test_sentiq_page_renders(tmp_path, monkeypatch):
+    _fake_sentiq(tmp_path, monkeypatch)
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "sentiq" / "page.py"), default_timeout=60).run()
+    assert not page.exception, page.exception
+    assert any(m.value == "healthy" for m in page.metric)
+    page.selectbox(key="sq_ticker").set_value("AAA").run()   # company lookup
+    assert not page.exception, page.exception
+
+
+def test_sentiq_page_without_data(tmp_path, monkeypatch):
+    monkeypatch.setenv("HUB_DATA_DIR", str(tmp_path))
+    from streamlit.testing.v1 import AppTest
+    page = AppTest.from_file(str(ROOT / "modules" / "sentiq" / "page.py"), default_timeout=60).run()
+    assert not page.exception
+    assert page.info
