@@ -278,6 +278,11 @@ else:
                              marker={"size": 8, "symbol": "diamond", "color": cfg.COLORS["pos"]},
                              text=m["rationale"].fillna(""),
                              hovertemplate="%{x|%Y-%m-%d} minutes %{y:+.1f}<br>%{text}<extra></extra>"))
+    pc = win(fed[fed["doc"].isin(cfg.PRESCONF_DOCS) & fed["stance"].notna()])
+    fig.add_trace(go.Scatter(x=pc["published_at"], y=pc["stance"], mode="markers", name="Press conference",
+                             marker={"size": 9, "symbol": "star", "color": cfg.COLORS["presconf"]},
+                             text=pc["doc"] + " · " + pc["rationale"].fillna(""),
+                             hovertemplate="%{x|%Y-%m-%d} %{y:+.1f}<br>%{text}<extra></extra>"))
     s = win(stmt)
     fig.add_trace(go.Scatter(x=s["published_at"], y=s["stance"], mode="lines+markers", name="FOMC statement",
                              line={"color": cfg.COLORS["line"], "width": 2, "shape": "hv"}, marker={"size": 7},
@@ -287,9 +292,12 @@ else:
                       yaxis={"range": [-1.05, 1.05], "title": "stance (dovish − / hawkish +)", "zeroline": True},
                       legend={"orientation": "h", "y": 1.12, "x": 0})
     ui.chart(fig, key="sq_fed_chart", zoom=True)
-    st.caption("Each FOMC statement, set of minutes and policy-relevant Governor speech or testimony read once by "
-               f"{summary.get('model', 'Claude')} (prompt {summary.get('fed_prompt_version', 'fed_v1')}). Minutes are "
-               "plotted on their release date, three weeks after the meeting. Collected live from Nov 18, 2026; "
+    st.caption("Each FOMC statement, press conference, set of minutes and policy-relevant Governor speech or "
+               f"testimony read once by {summary.get('model', 'Claude')} (prompt "
+               f"{summary.get('fed_prompt_version', 'fed_v1')}). Everything is plotted when its text was posted: "
+               "minutes three weeks after the meeting; press conferences as the Chair's opening statement that "
+               "afternoon and the full transcript with the Q&A one to three weeks later (earlier years: only the "
+               "full transcript, dated by its last revision on the Fed's site). Collected live from Nov 18, 2026; "
                "earlier documents were scored afterwards for context, and the model may know how 2019–2026 turned "
                "out. Nothing here has been tested against market moves yet; a test will be pre-registered once "
                "enough live documents exist.")

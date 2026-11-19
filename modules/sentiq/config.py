@@ -25,7 +25,9 @@ MATERIALITY_HELP = ("The model's judgment of how much the document matters to th
                     "close after the filing): earnings releases low / medium / high moved 1.7% / 2.2% / 4.2% on "
                     "average, other 8-Ks 1.4% / 1.8% / 3.1%. That move mostly happens before the reading is "
                     "usable, so it is a size-of-news label, not a trade signal.")
-FED_DOCS = ["FOMC statement", "FOMC minutes", "Speech", "Testimony"]
+FED_DOCS = ["FOMC statement", "Press conference (opening)", "Press conference (full)", "FOMC minutes", "Speech",
+            "Testimony"]
+PRESCONF_DOCS = ["Press conference (opening)", "Press conference (full)"]
 FED_RELEVANT = ["high", "medium"]            # policy_relevance; 'low' documents get no stance
 FED_TREND_DAYS = 90                         # trailing mean of Governors' speech / testimony stance
 FED_STANCE_HELP = ("The model's reading of the document's policy stance: -1 clearly dovish (easier policy) ... "
@@ -37,4 +39,4 @@ FED_MACRO_HELP = ("How the document describes the economy, -1 ... +1: inflation 
 STALE_POLL_MINUTES = 15                    # last successful poll older than this (vs publish time) = warning
 TOP_N = 15                                  # rows in each side of the earnings board
 TONE_RANGES = {"1Y": 365, "3Y": 3 * 365, "All": None}
-COLORS = {"pos": "#2BB5A6", "neg": "#E4572E", "line": "#5B8DEF", "bars": "#C9D1D9", "muted": "#8B949E"}
+COLORS = {"pos": "#2BB5A6", "neg": "#E4572E", "line": "#5B8DEF", "bars": "#C9D1D9", "muted": "#8B949E", "presconf": "#A371F7"}
