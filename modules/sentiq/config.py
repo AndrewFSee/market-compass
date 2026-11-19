@@ -1,4 +1,4 @@
-"""SentIQ module: scored 8-Ks and earnings calls, collector health and research status, published by
+"""SentIQ module: scored 8-Ks, earnings calls and Fed documents, collector health and research status, published by
 SentIQ's scripts/publish_news_to_hub.py (the "sentiq" job in registry.py). This page only reads it.
 
 No returns are shown on purpose: SentIQ's holdout (from 2026-07-01) stays unseen until its
@@ -25,7 +25,16 @@ MATERIALITY_HELP = ("The model's judgment of how much the document matters to th
                     "close after the filing): earnings releases low / medium / high moved 1.7% / 2.2% / 4.2% on "
                     "average, other 8-Ks 1.4% / 1.8% / 3.1%. That move mostly happens before the reading is "
                     "usable, so it is a size-of-news label, not a trade signal.")
-STALE_POLL_MINUTES = 15                     # last successful poll older than this (vs publish time) = warning
+FED_DOCS = ["FOMC statement", "FOMC minutes", "Speech", "Testimony"]
+FED_RELEVANT = ["high", "medium"]            # policy_relevance; 'low' documents get no stance
+FED_TREND_DAYS = 90                         # trailing mean of Governors' speech / testimony stance
+FED_STANCE_HELP = ("The model's reading of the document's policy stance: -1 clearly dovish (easier policy) ... "
+                   "+1 clearly hawkish (tighter policy), 0 balanced. Empty when the document has no policy "
+                   "direction (most speeches on supervision, payments or community topics).")
+FED_MACRO_HELP = ("How the document describes the economy, -1 ... +1: inflation (-1 easing / below goal, +1 rising / "
+                  "upside risk), growth (-1 weakening, +1 strengthening), labor (-1 weakening, +1 tightening). "
+                  "Empty if not discussed.")
+STALE_POLL_MINUTES = 15                    # last successful poll older than this (vs publish time) = warning
 TOP_N = 15                                  # rows in each side of the earnings board
 TONE_RANGES = {"1Y": 365, "3Y": 3 * 365, "All": None}
-COLORS = {"pos": "#2BB5A6", "neg": "#E4572E", "line": "#5B8DEF", "bars": "#C9D1D9"}
+COLORS = {"pos": "#2BB5A6", "neg": "#E4572E", "line": "#5B8DEF", "bars": "#C9D1D9", "muted": "#8B949E"}

@@ -1,4 +1,4 @@
-"""SentIQ page: what the model read in today's 8-Ks and earnings calls, how the collector is doing, and
+"""SentIQ page: what the model read in today's 8-Ks, earnings calls and Fed documents, how the collector is doing, and
 where the research stands. Reads only what SentIQ publishes (scripts/publish_news_to_hub.py). No
 returns on purpose (SentIQ's holdout stays unseen until its pre-registered looks)."""
 from __future__ import annotations
@@ -211,6 +211,117 @@ if daily is not None and not daily.empty:
                    "earlier), months with at least 10 such pairs; the current month is partial. This removes the "
                    "seasonal mix of who reports. Whether it predicts the market was tested before the holdout "
                    "(test 12): it did not (correlation with next month's S&P 500 return −0.06, p 0.55).")
+
+# ================================================================= Federal Reserve
+@st.cache_data(show_spinner=False)
+def _fed(stamp) -> pd.DataFrame | None:
+    f = store.load_frame(MODULE, "fed")
+    if f is None or f.empty:
+        return None
+    for c in ("tradable_at", "published_at", "first_seen_at", "scored_at"):
+        f[c] = pd.to_datetime(f[c], utc=True).dt.tz_convert(cfg.ET)
+    return f.sort_values("tradable_at", ascending=False)
+
+
+st.subheader("Federal Reserve")
+fed = _fed(store.stamp(MODULE, "fed"))
+if fed is None:
+    st.caption("No scored Fed documents published yet.")
+else:
+    fed_src = src.get("fed", {})
+    stmt = fed[fed["doc"] == "FOMC statement"]
+    mins = fed[fed["doc"] == "FOMC minutes"]
+    talk = fed[fed["doc"].isin(["Speech", "Testimony"]) & fed["policy_relevance"].isin(cfg.FED_RELEVANT)
+               & fed["stance"].notna()]
+    recent = talk[talk["tradable_at"] >= as_of - pd.Timedelta(days=cfg.FED_TREND_DAYS)]
+    c = st.columns(4)
+    if not stmt.empty:
+        s0 = stmt.iloc[0]
+        c[0].metric("Latest FOMC statement", f"{s0['stance']:+.1f}", border=True,
+                    delta=f"{s0['published_at']:%b %d, %Y} · {s0['rate_path']}", delta_color="off",
+                    help=cfg.FED_STANCE_HELP)
+    if not mins.empty:
+        m0 = mins.iloc[0]
+        c[1].metric("Latest minutes", f"{m0['stance']:+.1f}" if pd.notna(m0["stance"]) else "—", border=True,
+                    delta=f"{m0['published_at']:%b %d, %Y}", delta_color="off", help=cfg.FED_STANCE_HELP)
+    c[2].metric(f"Governors, last {cfg.FED_TREND_DAYS} days", f"{recent['stance'].mean():+.2f}"
+                if not recent.empty else "—", border=True,
+                delta=f"{len(recent)} policy speeches / testimony", delta_color="off",
+                help="Mean stance of Governors' speeches and testimony with high or medium policy relevance")
+    fed_ok = fed_src.get("last_poll_ok_at")
+    c[3].metric("Last Fed poll", ago(fed_ok, as_of), border=True,
+                help=f"Collected live since {pd.Timestamp(summary.get('fed_live_since')).tz_convert(cfg.ET):%b %d, %Y}"
+                if summary.get("fed_live_since") else None)
+    if fed_src.get("consecutive_failures"):
+        ui.badge(f"Fed polls failing ({fed_src['consecutive_failures']} in a row): {fed_src.get('last_error')}",
+                 "amber")
+
+    frng = ui.choice("Range ", list(cfg.TONE_RANGES), key="sq_fed_rng", default="3Y")
+    lo = as_of - pd.Timedelta(days=cfg.TONE_RANGES[frng]) if cfg.TONE_RANGES[frng] else None
+    win = (lambda x: x if lo is None else x[x["tradable_at"] >= lo])
+    trend = talk.sort_values("published_at").set_index("published_at")["stance"].rolling(
+        f"{cfg.FED_TREND_DAYS}D").mean()
+    trend = trend.groupby(level=0).last().reset_index().rename(columns={"published_at": "tradable_at"})
+    fig = go.Figure()
+    t = win(talk)
+    fig.add_trace(go.Scatter(x=t["published_at"], y=t["stance"], mode="markers", name="Governor speech / testimony",
+                             marker={"size": 5, "color": cfg.COLORS["muted"]},
+                             text=t["speaker"] + ": " + t["title"] + "<br>" + t["rationale"].fillna(""),
+                             hovertemplate="%{x|%Y-%m-%d} %{y:+.1f}<br>%{text}<extra></extra>"))
+    tr = win(trend)
+    fig.add_trace(go.Scatter(x=tr["tradable_at"], y=tr["stance"], mode="lines",
+                             name=f"Governors, trailing {cfg.FED_TREND_DAYS}-day mean",
+                             line={"color": cfg.COLORS["muted"], "width": 2, "dash": "dot"},
+                             hovertemplate="%{x|%Y-%m-%d} %{y:+.2f}<extra></extra>"))
+    m = win(mins)
+    fig.add_trace(go.Scatter(x=m["published_at"], y=m["stance"], mode="markers", name="FOMC minutes",
+                             marker={"size": 8, "symbol": "diamond", "color": cfg.COLORS["pos"]},
+                             text=m["rationale"].fillna(""),
+                             hovertemplate="%{x|%Y-%m-%d} minutes %{y:+.1f}<br>%{text}<extra></extra>"))
+    s = win(stmt)
+    fig.add_trace(go.Scatter(x=s["published_at"], y=s["stance"], mode="lines+markers", name="FOMC statement",
+                             line={"color": cfg.COLORS["line"], "width": 2, "shape": "hv"}, marker={"size": 7},
+                             text=s["rate_path"] + " · " + s["rationale"].fillna(""),
+                             hovertemplate="%{x|%Y-%m-%d} statement %{y:+.1f}<br>%{text}<extra></extra>"))
+    fig.update_layout(height=340, margin={"l": 0, "r": 0, "t": 30, "b": 0},
+                      yaxis={"range": [-1.05, 1.05], "title": "stance (dovish − / hawkish +)", "zeroline": True},
+                      legend={"orientation": "h", "y": 1.12, "x": 0})
+    ui.chart(fig, key="sq_fed_chart", zoom=True)
+    st.caption("Each FOMC statement, set of minutes and policy-relevant Governor speech or testimony read once by "
+               f"{summary.get('model', 'Claude')} (prompt {summary.get('fed_prompt_version', 'fed_v1')}). Minutes are "
+               "plotted on their release date, three weeks after the meeting. Collected live from Nov 18, 2026; "
+               "earlier documents were scored afterwards for context, and the model may know how 2019–2026 turned "
+               "out. Nothing here has been tested against market moves yet; a test will be pre-registered once "
+               "enough live documents exist.")
+
+    c1, c2, c3 = st.columns([2, 4, 3])
+    with c1:
+        fdays = cfg.WINDOWS[ui.choice("Fed window", list(cfg.WINDOWS), key="sq_fed_days", default="1 month")]
+    with c2:
+        fdocs = st.multiselect("Fed documents", cfg.FED_DOCS, default=cfg.FED_DOCS, key="sq_fed_docs")
+    with c3:
+        fpol = st.toggle("Policy-relevant only (high / medium)", value=False, key="sq_fed_rel")
+    fv = fed[(fed["tradable_at"] >= as_of - pd.Timedelta(days=fdays)) & fed["doc"].isin(fdocs)]
+    if fpol:
+        fv = fv[fv["policy_relevance"].isin(cfg.FED_RELEVANT)]
+    if fv.empty:
+        st.caption("No Fed documents in this window with these filters.")
+    else:
+        num = {"format": "%+.1f", "help": cfg.FED_MACRO_HELP}
+        ui.table(pd.DataFrame({
+            "Released (ET)": fv["published_at"].dt.strftime("%Y-%m-%d %H:%M"),
+            "Usable from (ET)": fv["tradable_at"].dt.strftime("%Y-%m-%d %H:%M"), "Document": fv["doc"],
+            "Speaker": fv["speaker"], "Title": fv["title"], "Policy relevance": fv["policy_relevance"],
+            "Stance": fv["stance"], "Rate path": fv["rate_path"], "Inflation": fv["inflation"],
+            "Growth": fv["growth"], "Labor": fv["labor"], "Model's reading": fv["rationale"], "Link": fv["url"]}),
+            hide_index=True, key="sq_fed_table", column_config={
+                "Stance": st.column_config.ProgressColumn(min_value=-1, max_value=1, format="%+.1f",
+                                                          help=cfg.FED_STANCE_HELP),
+                "Rate path": st.column_config.TextColumn(help="Where the document points the policy rate next: "
+                                                         "hike / hold / cut / unclear"),
+                "Inflation": st.column_config.NumberColumn(**num), "Growth": st.column_config.NumberColumn(**num),
+                "Labor": st.column_config.NumberColumn(**num),
+                "Link": st.column_config.LinkColumn(display_text="open")})
 
 # ================================================================= company lookup
 st.subheader("Company lookup")
