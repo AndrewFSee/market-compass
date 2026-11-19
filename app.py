@@ -13,21 +13,39 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-def forget_changed_modules(prefixes=("core", "modules", "registry")) -> list[str]:
+HUB_PREFIXES = ("core", "modules", "registry")
+
+
+def _hub_modules(prefixes=HUB_PREFIXES):
+    """(name, module, source mtime) of the hub's own loaded modules."""
+    for name, mod in list(sys.modules.items()):
+        path = getattr(mod, "__file__", None)
+        if not path or name.split(".")[0] not in prefixes or not path.startswith(str(ROOT)):
+            continue
+        try:
+            yield name, mod, os.path.getmtime(path)
+        except OSError:
+            continue
+
+
+def stamp_loaded_modules() -> None:
+    """Record the source mtime of modules imported during this run, right after the run.
+
+    Stamping only at the next run's check (as before) took the *edited* file's mtime as the
+    baseline when a module was imported in one run and edited before the next, so that edit
+    was never picked up (AttributeError on a new config constant until a server restart)."""
+    for _, mod, mtime in _hub_modules():
+        mod.__dict__.setdefault("__hub_mtime__", mtime)
+
+
+def forget_changed_modules(prefixes=HUB_PREFIXES) -> list[str]:
     """Drop the hub's own modules whose source changed since they were imported.
 
     Streamlit re-reads page scripts on every run but keeps imported modules, so editing
     e.g. modules/credit/config.py while the server runs leaves pages on the old config
     (AttributeError on anything new). Dropped modules are imported fresh by the pages."""
     dropped = []
-    for name, mod in list(sys.modules.items()):
-        path = getattr(mod, "__file__", None)
-        if not path or name.split(".")[0] not in prefixes or not path.startswith(str(ROOT)):
-            continue
-        try:
-            mtime = os.path.getmtime(path)
-        except OSError:
-            continue
+    for name, mod, mtime in _hub_modules(prefixes):
         loaded = mod.__dict__.setdefault("__hub_mtime__", mtime)
         if mtime > loaded:
             del sys.modules[name]
@@ -42,6 +60,8 @@ def forget_changed_modules(prefixes=("core", "modules", "registry")) -> list[str
 forget_changed_modules()
 from core import apps, env  # noqa: E402
 from registry import LINKS, PAGES  # noqa: E402
+
+stamp_loaded_modules()
 
 env.load()  # .env secrets (FRED_API_KEY, ANTHROPIC_API_KEY) for pages that need them
 
@@ -84,4 +104,7 @@ if LINKS:
             else:
                 st.markdown(f"[{link['title']}]({link['url']})")
 
-page.run()
+try:
+    page.run()
+finally:  # also after st.stop() / st.rerun() / an exception inside the page
+    stamp_loaded_modules()

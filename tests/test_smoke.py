@@ -387,14 +387,19 @@ def test_gauges_carry_trend_and_market_link(demo_data):
     assert "spy" in store.load_frame("market", "gauge_history")
 
 
+def _hub_reload_helpers():
+    import os
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    helper = src[src.index("HUB_PREFIXES = "):src.index("forget_changed_modules()\n")]
+    ns = {"os": os, "sys": sys, "ROOT": ROOT}
+    exec(helper, ns)  # just the helpers: running app.py itself would start Streamlit navigation
+    return ns["forget_changed_modules"], ns["stamp_loaded_modules"]
+
+
 def test_hub_forgets_modules_edited_while_running(tmp_path, monkeypatch):
     """Editing a module under the hub while the server runs must not leave pages on stale code."""
     import os
-    src = (ROOT / "app.py").read_text(encoding="utf-8")
-    helper = src[src.index("def forget_changed_modules"):src.index("forget_changed_modules()\n")]
-    ns = {"os": os, "sys": sys, "ROOT": ROOT}
-    exec(helper, ns)  # just the helper: running app.py itself would start Streamlit navigation
-    forget = ns["forget_changed_modules"]
+    forget, _ = _hub_reload_helpers()
 
     import modules.credit.config as cfg_mod
     forget()                                   # first sight: stamps the import time
@@ -406,6 +411,30 @@ def test_hub_forgets_modules_edited_while_running(tmp_path, monkeypatch):
         assert "modules.credit.config" in forget()
         assert "modules.credit.config" not in sys.modules
         from modules.credit import config as fresh  # the pages' form: must not reuse the package attribute
+        assert fresh is not cfg_mod
+    finally:
+        os.utime(path, (old, old))
+
+
+def test_hub_forgets_module_edited_between_import_and_next_run():
+    """A page imports a module during a run and the file is edited before the next run: the
+    end-of-run stamp must hold the import-time mtime, so the next run drops the module (it used
+    to take the edited mtime as the baseline and keep the stale module until a restart)."""
+    import os
+    forget, stamp = _hub_reload_helpers()
+    name = "modules.sentiq.config"
+    sys.modules.pop(name, None)
+    import modules.sentiq  # noqa: F401
+    if hasattr(sys.modules["modules.sentiq"], "config"):
+        delattr(sys.modules["modules.sentiq"], "config")
+    from modules.sentiq import config as cfg_mod   # imported "during run N"
+    stamp()                                        # end of run N
+    path = cfg_mod.__file__
+    old = os.path.getmtime(path)
+    try:
+        os.utime(path, (old + 5, old + 5))         # edited before run N + 1
+        assert name in forget()                    # start of run N + 1
+        from modules.sentiq import config as fresh
         assert fresh is not cfg_mod
     finally:
         os.utime(path, (old, old))
