@@ -4,7 +4,7 @@
 #
 # Runs scripts\rebuild_macro_panel.py with the hub's venv (pythonw: no window) at 8:00 PM on
 # the 20th of each month, after the weekday hub refresh, when most of the previous month's
-# data is out. The rebuild takes about 3 hours. Same settings as HubRefresh: S4U, wakes the
+# data is out. The rebuild took about 9 hours in Nov 2026 (3 earlier), so the limit is 14. Same settings as HubRefresh: S4U, wakes the
 # machine, catches up a missed run, never overlaps. Log: data\logs\macro_panel.log.
 # Defined in XML because the ScheduledTasks cmdlets have no monthly trigger. The start time
 # has no UTC offset, so it follows local time across DST. Re-running replaces the task.
@@ -48,7 +48,7 @@ $xml = @"
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
     <StartWhenAvailable>true</StartWhenAvailable>
     <WakeToRun>true</WakeToRun>
-    <ExecutionTimeLimit>PT8H</ExecutionTimeLimit>
+    <ExecutionTimeLimit>PT14H</ExecutionTimeLimit>
     <Enabled>true</Enabled>
   </Settings>
   <Actions Context="Author">

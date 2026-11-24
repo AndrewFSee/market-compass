@@ -121,7 +121,7 @@ Publishers are thin: they call the project's own validated functions, never re-i
   `data/features.csv`), summary.json (live nowcast, config from `config/settings.yaml` as in
   `run_nowcast.py`). Only the walk-forward panel is used as history: a single
   `Nowcaster.run()` history is in-sample. The panel is not rebuilt by the job
-  (`scripts/build_features.py --start 1967-01-31`, ~3 h); the monthly task below rebuilds it,
+  (`scripts/build_features.py --start 1967-01-31`, ~9 h as of 2026-11); the monthly task below rebuilds it,
   and the page warns when it is >45 days old.
 - **vol** (stochastic-vol-surface) -> `data/vol/`: overview, history, market, forecasts,
   summary.json. No network: reads what the project's own scheduled scrapers wrote, so the
@@ -320,7 +320,7 @@ Publishers are thin: they call the project's own validated functions, never re-i
   still raises so run_jobs logs it as FAILED.
 - Tools say what lag is normal so briefs don't report it as missing data: the economic gauge's
   final month trails by 1-2 months (75% coverage rule); the macro panel is a monthly-rebuilt
-  walk-forward history (~3 h, rows knowable 60 days after their month); HYG's thin chain often
+  walk-forward history (~9 h, rows knowable 60 days after their month); HYG's thin chain often
   misses the 30-day fit, so `vol_overview` adds the last available reading with its date.
 - Needs `ANTHROPIC_API_KEY` in `.env` (app.py and run_jobs.py load it). Tests never call
   the API: they fake the client / `agent.ask`.

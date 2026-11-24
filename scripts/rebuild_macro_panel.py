@@ -2,7 +2,7 @@
 
 Run by the \\MarketCompass\\MacroPanelRebuild task (scripts/register_panel_task.ps1) on the 20th,
 when most of the previous month's data is out. The build refits the nowcaster once per month
-since 1967 with that project's own venv (about 3 hours); the hub's macro job then republishes
+since 1967 with that project's own venv (about 9 hours as of Nov 2026); the hub's macro job then republishes
 it. Output goes to data/logs/macro_panel.log.
 
     python scripts/rebuild_macro_panel.py
