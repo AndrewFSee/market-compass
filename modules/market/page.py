@@ -219,6 +219,29 @@ def headline_period(item: dict) -> str:
     return f"{d:%b %Y}" if item["freq"] == "monthly" else f"{d:%b %d}"
 
 
+HOVER_DATE = {"daily": "%b %d, %Y", "monthly": "%b %Y", "quarterly": "Q%q %Y"}
+
+
+def headline_chart(item: dict, color: str) -> go.Figure | None:
+    """The tile's recent history on a date axis; hover shows the period and the value."""
+    values, dates = item.get("spark") or [], item.get("spark_dates") or []
+    if len(values) < 2 or len(dates) != len(values):
+        return None
+    unit = item["unit"]
+    fmt = ("%{y:+,.0f}k" if unit == "k" else "%{y:+.2f} pts" if unit == "pts"
+           else "%{y:.2f}%" if item["freq"] == "daily" else "%{y:.1f}%")
+    fig = go.Figure(go.Scatter(
+        x=pd.to_datetime(dates), y=values, mode="lines", line={"width": 1.8, "color": color},
+        line_shape="hv" if item["kind"] == "range" else "linear",
+        hovertemplate=f"%{{x|{HOVER_DATE.get(item['freq'], '%b %d, %Y')}}}: {fmt}<extra></extra>"))
+    if unit in ("k", "pts") and min(values) < 0 < max(values):
+        fig.add_hline(y=0, line={"width": 1, "color": ui.PALETTE["grey"], "dash": "dot"}, opacity=0.5)
+    fig.update_layout(height=130, margin={"l": 0, "r": 0, "t": 4, "b": 0}, showlegend=False,
+                      hovermode="x", xaxis={"tickformat": "%b '%y", "nticks": 5, "showgrid": False},
+                      yaxis={"nticks": 4, "tickfont": {"size": 10}, "side": "right"})
+    return fig
+
+
 def next_release(key: str | None, calendar: pd.DataFrame | None):
     if not key or calendar is None or calendar.empty:
         return None
@@ -247,15 +270,22 @@ else:
         color = "off" if flat else {True: "normal", False: "inverse"}.get(h.get("up_is_good"), "off")
         if flat:
             delta = f"unchanged vs {prev}"
-        with cols[i % 3]:
+        line_color = ui.PALETTE["grey"] if color == "off" else (ui.PALETTE["teal"] if (color == "normal") == (
+            (h.get("change") or 0) > 0) else ui.PALETTE["red"])
+        with cols[i % 3], st.container(border=True):
             st.metric(f"{h['label']} · {headline_period(h)}", headline_value(h), delta=delta, delta_color=color,
                       delta_arrow="off" if flat else "auto",
-                      chart_data=h.get("spark"), chart_type="line", border=True,
                       help=(f"Next release {nxt:%a %b %d}" if nxt is not None else "No release date in the calendar")
                       + f". FRED {h['kind']} of the latest {h['freq']} figure.")
+            fig = headline_chart(h, line_color)
+            if fig is not None:
+                ui.chart(fig, key=f"headline_{h['key']}")
+            elif h.get("spark"):
+                st.line_chart(h["spark"], height=130)   # data published before the charts had dates
     st.caption("Latest published figures from FRED (CPI and PCE are year-over-year; GDP is the latest quarter's "
-               "growth at an annual rate; payrolls are the monthly change). Hover a tile for its next release date "
-               "from the Events calendar. Lines show the last two years.")
+               "growth at an annual rate; payrolls are the monthly change). Hover a tile's ? for its next release "
+               "date from the Events calendar. Charts show daily series over the last two years and the last 24 "
+               "releases of the others; hover a line for its dates.")
 
 # ================================================================= breadth & style
 st.subheader("Breadth & style")

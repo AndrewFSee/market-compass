@@ -236,7 +236,7 @@ HEADLINE_ECON = [
     {"key": "gdp", "label": "Real GDP, q/q annualized", "series": ["GDPC1"], "kind": "saar", "unit": "%",
      "release": "gdp"},
 ]
-HEADLINE_SPARK = 24         # observations kept per tile for its sparkline
+HEADLINE_SPARK = 24         # releases kept per monthly / quarterly tile chart (daily series: last 2 years)
 
 
 # ---------------------------------------------------------------- FRED

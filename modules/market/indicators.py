@@ -733,9 +733,10 @@ def headline_series(fred: dict, spec: dict) -> pd.Series | None:
 
 
 def headline_econ(fred: dict, specs: list[dict], spark: int = 24) -> list[dict]:
-    """Latest value of each headline number with the one before it. Daily series compare with a
-    month earlier and their sparkline uses month-ends; monthly and quarterly series compare with
-    the previous release. A range (the Fed's target) reports its lower bound too."""
+    """Latest value of each headline number with the one before it, plus its recent history
+    (`spark` values on `spark_dates`). Daily series compare with a month earlier and keep every day
+    of the last two years; monthly and quarterly series compare with the previous release and keep
+    the last `spark` releases. A range (the Fed's target) reports its lower bound too."""
     out = []
     for spec in specs:
         item = {k: spec.get(k) for k in ("key", "label", "unit", "kind", "release")}
@@ -751,16 +752,16 @@ def headline_econ(fred: dict, specs: list[dict], spark: int = 24) -> list[dict]:
         if daily:
             prior_s = s[s.index <= d - pd.DateOffset(months=1)]
             prior = float(prior_s.iloc[-1]) if len(prior_s) else None
-            line = s.resample("ME").last().dropna()
-            line.iloc[-1] = s.iloc[-1]
+            line = s[s.index > d - pd.DateOffset(years=2)]      # every day of the last two years
         else:
             prior = float(s.iloc[-2]) if len(s) > 1 else None
-            line = s
+            line = s.tail(spark)
         freq = "daily" if daily else ("quarterly" if gap > 60 else "monthly")
         item.update({"value": float(s.iloc[-1]), "prior": prior,
                      "change": float(s.iloc[-1]) - prior if prior is not None else None,
                      "date": d.strftime("%Y-%m-%d"), "freq": freq,
-                     "spark": [round(float(x), 4) for x in line.tail(spark)]})
+                     "spark": [round(float(x), 4) for x in line],
+                     "spark_dates": [x.strftime("%Y-%m-%d") for x in line.index]})
         if spec["kind"] == "range":
             lo = _clean_series(fred.get(spec["series"][0]))
             item["low"] = float(lo.loc[:d].iloc[-1]) if lo is not None and len(lo.loc[:d]) else None

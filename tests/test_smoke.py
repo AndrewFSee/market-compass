@@ -1006,6 +1006,9 @@ def test_headline_econ_transforms():
     assert (out["ff"]["low"], out["ff"]["value"], out["ff"]["freq"]) == (3.75, 4.0, "daily")
     assert out["ff"]["up_is_good"] is None and out["curve"]["value"] == pytest.approx(0.5)
     assert out["gone"]["value"] is None
+    for h in (out["cpi"], out["pay"], out["gdp"], out["ff"]):       # every chart point has its date
+        assert len(h["spark"]) == len(h["spark_dates"]) and h["spark_dates"][-1] == h["date"]
+    assert len(out["ff"]["spark"]) == len(days)                     # daily: every day of the last two years
 
 
 def test_market_page_shows_economy_and_global_markets(demo_data):
