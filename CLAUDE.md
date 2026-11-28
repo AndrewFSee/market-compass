@@ -330,8 +330,18 @@ Publishers are thin: they call the project's own validated functions, never re-i
   `job.last_complete_session` cuts all market prices to the last complete session.
 
 ## Open items / ideas
-- Liquidity gauge never reached its LOOSE band (>35) in 5 years of real history (max ~34):
-  the band cut-offs or the averaging of 8 z-scores probably need calibrating.
+- Gauge band cut-offs, tested 2026-11-28 (scratch `liq_cuts.py`, `econ_cuts.py`, not in the job). The cut-offs are
+  round numbers, not taken from any paper. Liquidity: averaging 8 partly correlated factor scores gives the
+  composite an sd of ~22, so at +/-35 it sat 7 / 91 / 2% tight / neutral / loose (2006-26; never LOOSE in the last
+  5 years). Now +/-20 (~ its 20th / 80th percentile, -17 / +18; 18 / 67 / 16%). No cut-off, fixed, walk-forward
+  percentile or rescaled composite predicts SPY: looser band -> higher next 1m / 3m return NW t 1.1 / 1.3 at +/-20,
+  at most 1.6; rank IC +0.09-0.10 (238 months, ~+0.08 both halves). Tight months were followed by more vol (20 vs
+  15%) and deeper 1-month drawdowns (-4 vs -2.4%), but beyond last month's vol the gauge adds nothing (t -1.0).
+  Economic: sd 27, +/-35 gives 10 / 83 / 7% (1954-2026), so it was left at +/-35. Against French market returns
+  1954-2026 (lag 1 month; stored history uses revised data and full-sample GDP weights): rank IC next 3m -0.03, 12m
+  -0.10 (t -0.8), ~0 both halves. CONTRACTING was followed by lower 3m returns (1.0 vs 3.2%), higher vol (19 vs 13%)
+  and deeper 3-month drawdowns (-8.5 vs -4.0%), but higher 12m returns before 1990 (17 vs 12%); EXPANDING did no
+  better than MODERATE. Beyond trailing vol it adds little for next-3m vol (t -1.7).
 - Technical gauge ranks components against a mostly-bullish 2 years, so ordinary pullbacks
   read BEARISH (e.g. 25 with SPY 5.7% above its 200-day). Consider a longer window.
 - Calibrate gauges against SimpleVisor readings during the trial (log both daily).

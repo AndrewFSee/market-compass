@@ -314,7 +314,10 @@ GAUGES = {
     },
     "liquidity": {
         "title": "Liquidity Regime",
-        "lo": -100, "hi": 100, "cuts": [-35, 35], "colors": ["red", "amber", "teal"],
+        # +/-20: the composite averages 8 partly correlated factors, so its sd is ~22 (2006-2026); at +/-35
+        # LOOSE held 2% of sessions. +/-20 ~ its 20th / 80th percentile (-17 / +18). Tested 2026-11-28: no
+        # cut-off predicts SPY's next 1 or 3 months (looser band -> higher return, NW t <= 1.6)
+        "lo": -100, "hi": 100, "cuts": [-20, 20], "colors": ["red", "amber", "teal"],
         "caption": "Composite of 8 macro liquidity factors (credit, rates, Fed balance "
                    "sheet, dollar). Higher = looser liquidity, lower = tighter.",
     },
@@ -363,7 +366,8 @@ def gauge_label(key: str, v: float | None) -> str:
         return ("OVERSOLD" if v < 20 else "BEARISH" if v < 40 else "NEUTRAL" if v <= 60
                 else "BULLISH" if v <= 80 else "OVERBOUGHT")
     if key == "liquidity":
-        return "TIGHT" if v < -35 else "NEUTRAL" if v <= 35 else "LOOSE"
+        lo, hi = GAUGES["liquidity"]["cuts"]
+        return "TIGHT" if v < lo else "NEUTRAL" if v <= hi else "LOOSE"
     if key == "economic":
         return "CONTRACTING" if v < -35 else "MODERATE" if v <= 35 else "EXPANDING"
     return ""
